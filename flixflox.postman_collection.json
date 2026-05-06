@@ -1,0 +1,695 @@
+{
+  "info": {
+    "_postman_id": "d61cb49b-d7a0-4a24-a1b9-4db73cd2cc0d",
+    "name": "flixflox",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "19663430"
+  },
+  "item": [
+    {
+      "name": "Register User",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"elvis\",\n    \"password\": \"elvis123\",\n    \"role\": \"admin\",\n    \"email\": \"elvis@mail.com\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{host}}/v1/api/auth/register",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "api",
+            "auth",
+            "register"
+          ]
+        },
+        "description": "Generated from cURL: curl --location 'http://localhost:5000/v1/stream/app/register' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\n    \"username\": \"elvis\",\n    \"password\": \"12345\",\n    \"email\": \"elvis@mail.com\"\n}'"
+      },
+      "response": []
+    },
+    {
+      "name": "Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"elvis\",\n    \"password\": \"elvis123\",\n    \"email\": \"elvis@mail.com\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{host}}/v1/api/auth/login",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "api",
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Logout",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{host}}/v1/api/auth/logout",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "api",
+            "auth",
+            "logout"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "RefreshToken",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{host}}/v1/api/auth/token/refresh",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "api",
+            "auth",
+            "token",
+            "refresh"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "CheckLogin",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"elvis\",\n    \"password\": \"12345\",\n    \"email\": \"elvis@mail.com\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{host}}/v1/api/auth/check",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "api",
+            "auth",
+            "check"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Refresh Token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTczODAyMTAxNSwianRpIjoiMWQzNTNmYWEtOGY2ZS00Zjk3LTllNTktZDVhNTE3ZWFkNzhkIiwidHlwZSI6InJlZnJlc2giLCJzdWIiOiI2NmM5NGZhNzA4MGI3YmM4NGNlYjc5NmUiLCJuYmYiOjE3MzgwMjEwMTUsImNzcmYiOiJjMDc2ZDg0Yi01NjQ3LTRiMmYtOWY1Ny05NWQzMTA2MWU0ZjMiLCJleHAiOjE3NDA2MTMwMTV9.edseixYdNMfN35jWtWwTQelVag190seyE6OiKFZ27fM",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{host}}/v1/api/auth/token/refresh",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "api",
+            "auth",
+            "token",
+            "refresh"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GetUsers",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"elvis\",\n    \"password\": \"12345\",\n    \"email\": \"elvis@mail.com\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{host}}/v1/api/users",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "api",
+            "users"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GetViewers",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"elvis\",\n    \"password\": \"12345\",\n    \"email\": \"elvis@mail.com\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{host}}/v1/api/viewers",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "api",
+            "viewers"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Upload Video",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "type": "file",
+              "key": "file",
+              "fileNotInWorkingDirectoryWarning": "This file isn't in your working directory. Teammates you share this request with won't be able to use this file. To make collaboration easier you can setup your working directory in Settings.",
+              "filesNotInWorkingDirectory": [
+                "/Users/elvis/Downloads/bird.avi"
+              ],
+              "src": "/Users/elvis/Downloads/bird.avi"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{host}}/v1/stream/app/upload",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "stream",
+            "app",
+            "upload"
+          ]
+        },
+        "description": "Generated from cURL: curl -X POST -F \"file=@your_video.mp4\" http://localhost:3001/v1/stream/app/upload\n"
+      },
+      "response": []
+    },
+    {
+      "name": "List Content",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Host",
+            "value": "http://localhost:5173",
+            "type": "text",
+            "disabled": true
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": []
+        },
+        "url": {
+          "raw": "{{host}}/v1/api/videos",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "api",
+            "videos"
+          ]
+        },
+        "description": "Generated from cURL: curl -X POST -F \"file=@your_video.mp4\" http://localhost:3001/v1/stream/app/upload\n"
+      },
+      "response": []
+    },
+    {
+      "name": "GetContentByID",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Host",
+            "value": "http://localhost:5173",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": []
+        },
+        "url": {
+          "raw": "{{host}}/v1/stream/app/content/:id/details",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "stream",
+            "app",
+            "content",
+            ":id",
+            "details"
+          ],
+          "variable": [
+            {
+              "key": "id",
+              "value": ""
+            }
+          ]
+        },
+        "description": "Generated from cURL: curl -X POST -F \"file=@your_video.mp4\" http://localhost:3001/v1/stream/app/upload\n"
+      },
+      "response": []
+    },
+    {
+      "name": "GetEpisode",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Host",
+            "value": "http://localhost:5173",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": []
+        },
+        "url": {
+          "raw": "{{host}}/v1/api/videos/:id/season/:season",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "v1",
+            "api",
+            "videos",
+            ":id",
+            "season",
+            ":season"
+          ],
+          "variable": [
+            {
+              "key": "id",
+              "value": "d5fedd67-63e7-47e7-b77a-7116a3ebbcc6"
+            },
+            {
+              "key": "season",
+              "value": "1"
+            }
+          ]
+        },
+        "description": "Generated from cURL: curl -X POST -F \"file=@your_video.mp4\" http://localhost:3001/v1/stream/app/upload\n"
+      },
+      "response": []
+    },
+    {
+      "name": "Create Content",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"title\": \"¿Es un acto de amor?\",\n    \"type\": \"ramdom\",\n    \"release_year\": 2019,\n    \"genre\": [\"comedy\"],\n    \"rating\": 8.2,\n    \"description\": \"Geralt of Rivia, a solitary monster hunter, struggles to find his place in a world where people often prove more wicked than beasts.\",\n    \"cast\": [\"Henry Cavill\", \"Freya Allan\", \"Anya Chalotra\"],\n    \"duration_minutes\": 60,\n    \"file_path\": \"videos/Es_un_acto_de_amor/Es_un_acto_de_amor.m3u8\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{host}}//v1/stream/app/content",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "",
+            "v1",
+            "stream",
+            "app",
+            "content"
+          ]
+        },
+        "description": "Generated from cURL: curl -X POST -F \"file=@your_video.mp4\" http://localhost:3001/v1/stream/app/upload\n"
+      },
+      "response": []
+    },
+    {
+      "name": "Healthz",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{host}}//healthz",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "",
+            "healthz"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Ping",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{host}}//healthz/ping",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "",
+            "healthz",
+            "ping"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Ready",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{host}}//healthz/ready",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "",
+            "healthz",
+            "ready"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "jwt_token",
+      "value": ""
+    }
+  ]
+}

@@ -1,0 +1,1028 @@
+openapi: 3.0.3
+info:
+  title: FlixFlox API
+  description: |
+    Self-hosted video streaming API. Manages users, viewer profiles and a
+    movie/TV-show catalog, ingests source files and serves HLS streams.
+  version: 1.0.0
+  contact:
+    name: FlixFlox
+servers:
+  - url: http://localhost:5000
+    description: Local development
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Users
+  - name: Viewers
+  - name: Videos
+  - name: Queue
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe (also pings MongoDB)
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /healthz/ping:
+    get:
+      tags: [Health]
+      summary: Simple ping
+      security: []
+      responses:
+        '200':
+          description: Pong
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: pong
+
+  /healthz/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      security: []
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyStatus'
+        '503':
+          description: Not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyStatus'
+
+  /v1/api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with username and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful; sets access_token and refresh_token cookies
+          headers:
+            Set-Cookie:
+              description: access_token and refresh_token (HttpOnly, Secure, SameSite=None)
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/api/auth/token/refresh:
+    post:
+      tags: [Auth]
+      summary: Issue a new access token from a refresh token
+      description: Requires a valid refresh token (cookie or Authorization header).
+      responses:
+        '200':
+          description: New access token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  access_token:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/api/auth/logout:
+    delete:
+      tags: [Auth]
+      summary: Log out the current session
+      description: Blacklists the access token's jti and clears auth cookies.
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/api/auth/check:
+    get:
+      tags: [Auth]
+      summary: Validate the current token and return the user
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  authenticated:
+                    type: boolean
+                    example: true
+                  user:
+                    $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/api/users:
+    get:
+      tags: [Users]
+      summary: List all users
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Users]
+      summary: Create a user (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/api/users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      summary: Get a user by Mongo ID
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  user:
+                    $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Users]
+      summary: Update a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Partial user fields. `password` will be hashed if present.
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [Users]
+      summary: Delete a user
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/api/viewers:
+    get:
+      tags: [Viewers]
+      summary: List viewer profiles owned by the caller
+      responses:
+        '200':
+          description: Viewers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ViewerResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Viewers]
+      summary: Create a viewer profile for the caller
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateViewerRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/api/viewers/{uuid}:
+    parameters:
+      - $ref: '#/components/parameters/ViewerUUID'
+    get:
+      tags: [Viewers]
+      summary: Get a viewer profile by UUID (must belong to caller)
+      responses:
+        '200':
+          description: Viewer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ViewerResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Viewers]
+      summary: Update a viewer profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Partial viewer fields. `pin` will be hashed if present.
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Viewers]
+      summary: Delete a viewer profile
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/api/videos:
+    get:
+      tags: [Videos]
+      summary: List the entire catalog
+      security: []
+      responses:
+        '200':
+          description: Catalog items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CatalogItem'
+    post:
+      tags: [Videos]
+      summary: Create a catalog entry without uploading a file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogItem'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/api/videos/{vtype}/list:
+    get:
+      tags: [Videos]
+      summary: List catalog by type with pagination
+      security: []
+      parameters:
+        - name: vtype
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [movie, tvshow]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Page of catalog items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CatalogItem'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /v1/api/videos/{id}/details:
+    get:
+      tags: [Videos]
+      summary: Get full details of a catalog item by UUID
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogItem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/api/videos/{id}/season/{season}:
+    get:
+      tags: [Videos]
+      summary: List episodes for a TV show season
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: season
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Episodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Episode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/api/videos/stream/{path}:
+    get:
+      tags: [Videos]
+      summary: Stream HLS playlists, segments or progressive MP4
+      description: |
+        `path` is the relative path inside `UPLOAD_FOLDER`. The handler sets the
+        right Content-Type for `.m3u8`, `.ts`, `.m4s` and `.mp4` and refuses any
+        path that escapes the upload root.
+      security: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File contents
+          content:
+            application/x-mpegURL: {}
+            video/MP2T: {}
+            video/iso.segment: {}
+            video/mp4: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/api/videos/upload:
+    post:
+      tags: [Videos]
+      summary: Upload a source video and enqueue HLS conversion
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, type, values]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Source video file (.mp4 .avi .flv .mkv .mov .wmv .webm)
+                type:
+                  type: string
+                  enum: [movie, tvshow]
+                values:
+                  type: string
+                  description: JSON string with catalog metadata (title, release_year, rating, description, genre, cast)
+                metadata:
+                  type: string
+                  description: TV-show JSON string with `season`, `episode`, `title`
+      responses:
+        '201':
+          description: Created and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/api/videos/{id}/new-episode:
+    put:
+      tags: [Videos]
+      summary: Add a new episode to an existing TV show
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, metadata]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                metadata:
+                  type: string
+                  description: JSON string with `season`, `episode`, `title`
+      responses:
+        '200':
+          description: Episode queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/api/videos/queue/info:
+    get:
+      tags: [Queue]
+      summary: Conversion queue snapshot
+      security: []
+      responses:
+        '200':
+          description: Queue info
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /v1/api/videos/queue/start:
+    post:
+      tags: [Queue]
+      summary: Kick the conversion worker
+      responses:
+        '200':
+          description: Started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/api/videos/queue/cleanup:
+    post:
+      tags: [Queue]
+      summary: Drop completed/failed jobs
+      responses:
+        '200':
+          description: Cleaned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  removed:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      description: Mongo ObjectID
+      schema:
+        type: string
+    ViewerUUID:
+      name: uuid
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Conflict (duplicate)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+
+    StatusMessage:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        message:
+          type: string
+
+    CreatedResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        id:
+          oneOf:
+            - type: string
+            - type: object
+
+    UpdatedResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        id:
+          type: string
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        message:
+          type: string
+          example: FlixFlox API
+
+    ReadyStatus:
+      allOf:
+        - $ref: '#/components/schemas/HealthStatus'
+        - type: object
+          properties:
+            timestamp:
+              type: string
+              format: date-time
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+
+    LoginResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+
+    RegisterRequest:
+      type: object
+      required: [username, password, email]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+          minLength: 8
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          default: user
+
+    CreateUserRequest:
+      type: object
+      required: [username, password, email]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+        privileges:
+          type: array
+          items:
+            type: string
+
+    Address:
+      type: object
+      properties:
+        street:
+          type: string
+        city:
+          type: string
+        country:
+          type: string
+
+    Profile:
+      type: object
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        date_of_birth:
+          type: string
+        address:
+          $ref: '#/components/schemas/Address'
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        uuid:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        avatar:
+          type: string
+        role:
+          type: string
+        privileges:
+          type: array
+          items:
+            type: string
+        profile:
+          $ref: '#/components/schemas/Profile'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateViewerRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        color:
+          type: string
+          example: '#1890ff'
+        pin:
+          type: string
+        use_pin:
+          type: boolean
+          default: false
+        status:
+          type: string
+
+    ViewerResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        uuid:
+          type: string
+          format: uuid
+        name:
+          type: string
+        color:
+          type: string
+        use_pin:
+          type: boolean
+        status:
+          type: string
+        user_uuid:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Episode:
+      type: object
+      properties:
+        episode_number:
+          type: integer
+        title:
+          type: string
+        duration_seconds:
+          type: number
+        file_path:
+          type: string
+        status:
+          type: string
+        intro_start_time:
+          type: string
+        intro_end_time:
+          type: string
+        next_episode_time:
+          type: string
+
+    Season:
+      type: object
+      properties:
+        season_number:
+          type: integer
+        episodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Episode'
+
+    CatalogItem:
+      type: object
+      required: [title, type]
+      properties:
+        id:
+          type: string
+        uuid:
+          type: string
+          format: uuid
+        title:
+          type: string
+        type:
+          type: string
+          enum: [movie, tvshow]
+        release_year:
+          type: integer
+        genre:
+          type: array
+          items:
+            type: string
+        rating:
+          type: number
+        description:
+          type: string
+        cast:
+          type: array
+          items:
+            type: string
+        duration_seconds:
+          type: number
+        file_path:
+          type: string
+        intro_start_time:
+          type: string
+        intro_end_time:
+          type: string
+        status:
+          type: string
+          example: In-Progress
+        seasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/Season'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        total_pages:
+          type: integer
+          format: int64
