@@ -1,6 +1,6 @@
 # FlixFlox
 
-FlixFlox is a self-hosted video streaming API written in Go. It ingests source video files, transcodes them to HLS via FFmpeg in a background worker queue, and serves the resulting catalog (movies and TV shows) to authenticated users with per-account viewer profiles.
+Self-hosted video streaming API written in Go. It ingests source video files, transcodes them to HLS via FFmpeg in a background worker queue, and serves the resulting catalog (movies and TV shows) to authenticated users with per-account viewer profiles.
 
 ## Features
 
