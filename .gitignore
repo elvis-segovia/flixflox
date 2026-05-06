@@ -1,0 +1,19 @@
+uploads/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+.env
+vendor/
+
+# compiled binary at repo root
+/server
+
+# macOS
+.DS_Store
+
+# editors
+.idea/
+.vscode/
