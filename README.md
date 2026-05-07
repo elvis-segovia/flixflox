@@ -33,7 +33,7 @@ internal/models/     Domain models (User, Viewer, CatalogItem, ...)
 internal/queue/      FFmpeg conversion queue
 internal/utils/      JSON helpers, password hashing, etc.
 uploads/             Default upload + HLS output directory
-swagger.yaml         OpenAPI 3.0 specification
+openapi.yml         OpenAPI 3.0 specification
 ```
 
 ## Configuration
@@ -84,7 +84,7 @@ All routes are mounted under the `/v1/api` prefix, except for the health probes 
 | Viewers   | `/v1/api/viewers`     | JWT, scoped to caller    |
 | Videos    | `/v1/api/videos`      | Read public, write JWT   |
 
-The full machine-readable contract is in [`swagger.yaml`](./swagger.yaml). Open it with any OpenAPI viewer (Swagger UI, Redoc, Stoplight, etc.) to explore endpoints, request bodies and response schemas.
+The full machine-readable contract is in [`openapi.yml`](./openapi.yml). Open it with any OpenAPI viewer (Swagger UI, Redoc, Stoplight, etc.) to explore endpoints, request bodies and response schemas.
 
 ### Authentication
 
