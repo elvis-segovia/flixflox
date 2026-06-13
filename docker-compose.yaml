@@ -2,13 +2,13 @@ services:
   api:
     build: .
     ports:
-      - "5000:5000"
+      - "8080:8080"
     environment:
       - MONGO_URI=mongodb://mongo:27017/flixflox
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-in-production}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
       - UPLOAD_FOLDER=/app/uploads
-      - PORT=5000
+      - PORT=8080
     volumes:
       - uploads:/app/uploads
     depends_on:

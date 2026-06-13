@@ -39,7 +39,7 @@ func main() {
 
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.RealIP)
+	r.Use(chimw.ClientIPFromRemoteAddr)
 	r.Use(middleware.CORS(cfg.CORSOrigins))
 
 	handlers.RegisterHealthRoutes(r, db)
@@ -47,6 +47,8 @@ func main() {
 	handlers.RegisterUserRoutes(r, db, cfg)
 	handlers.RegisterViewerRoutes(r, db, cfg)
 	handlers.RegisterVideoRoutes(r, db, cfg, q)
+	handlers.RegisterGenresRoutes(r, db, cfg)
+	handlers.RegisterCastRoutes(r, db, cfg)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

@@ -289,6 +289,8 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 		safeTitle := sanitizeFilename(title)
 
 		var uploadDir, outputName string
+		var season, episode int
+
 		item := models.CatalogItem{
 			UUID:      contentUUID,
 			Title:     title,
@@ -340,6 +342,9 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			if metadata.Episode == 0 {
 				metadata.Episode = 1
 			}
+
+			season = metadata.Season
+			episode = metadata.Episode
 
 			uploadDir = filepath.Join(cfg.UploadFolder, safeTitle,
 				fmt.Sprintf("S%02d", metadata.Season),
@@ -400,6 +405,8 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			OutputDir:   uploadDir,
 			OutputName:  outputName,
 			ContentType: contentType,
+			Season:      season,
+			Episode:     episode,
 		})
 		q.Start()
 

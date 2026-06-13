@@ -1,0 +1,35 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: dockerfile
+    volumes:
+      - ../..:/workspaces:cached
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/home/vscode/.cache/go-build
+    command: sleep infinity
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/flixflox
+      - JWT_SECRET_KEY=dev-secret-do-not-use-in-prod
+      - CORS_ORIGIN=http://localhost:5173
+      - UPLOAD_FOLDER=/workspaces/flixflox/uploads
+      - PORT=8080
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  mongo:
+    image: mongo:8.2.7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo-data:
+  go-mod-cache:
+  go-build-cache:

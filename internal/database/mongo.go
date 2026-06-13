@@ -64,6 +64,12 @@ func EnsureIndexes(client *mongo.Client) {
 			},
 		},
 		{
+			name: "categories",
+			indexes: []mongo.IndexModel{
+				{Keys: bson.D{{Key: "uuid", Value: 1}}, Options: options.Index().SetUnique(true)},
+			},
+		},
+		{
 			name: "token_blacklist",
 			indexes: []mongo.IndexModel{
 				{Keys: bson.D{{Key: "jti", Value: 1}}, Options: options.Index().SetUnique(true)},

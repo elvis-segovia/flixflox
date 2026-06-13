@@ -1,0 +1,26 @@
+FROM golang:1.26.3-alpine3.22
+
+RUN apk add --no-cache \
+    git \
+    bash \
+    curl \
+    make \
+    ffmpeg \
+    ca-certificates \
+    tzdata \
+    openssh-client \
+    shadow \
+    sudo
+
+ENV GOPATH=/go \
+    GOCACHE=/home/$USERNAME/.cache/go-build \
+    PATH=/go/bin:/usr/local/go/bin:$PATH
+
+RUN mkdir -p /go/bin /go/pkg "$GOCACHE"
+
+RUN go install golang.org/x/tools/gopls@latest \
+    && go install github.com/go-delve/delve/cmd/dlv@latest \
+    && go install honnef.co/go/tools/cmd/staticcheck@latest \
+    && go install github.com/air-verse/air@latest
+
+WORKDIR /workspace

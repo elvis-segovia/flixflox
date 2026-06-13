@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/elvis/flixflox/internal/database"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 type JobStatus string
@@ -26,17 +28,17 @@ const (
 )
 
 type Job struct {
-	UUID          string    `json:"uuid"`
-	InputPath     string    `json:"input_path"`
-	OutputDir     string    `json:"output_dir"`
-	OutputName    string    `json:"output_name"`
-	ContentType   string    `json:"content_type"` // "movie" or "tvshow"
-	Season        int       `json:"season,omitempty"`
-	Episode       int       `json:"episode,omitempty"`
-	Status        JobStatus `json:"status"`
-	Error         string    `json:"error,omitempty"`
-	QueuedAt      time.Time `json:"queued_at"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	UUID        string     `json:"uuid"`
+	InputPath   string     `json:"input_path"`
+	OutputDir   string     `json:"output_dir"`
+	OutputName  string     `json:"output_name"`
+	ContentType string     `json:"content_type"` // "movie" or "tvshow"
+	Season      int        `json:"season,omitempty"`
+	Episode     int        `json:"episode,omitempty"`
+	Status      JobStatus  `json:"status"`
+	Error       string     `json:"error,omitempty"`
+	QueuedAt    time.Time  `json:"queued_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 type ConversionQueue struct {
@@ -158,6 +160,25 @@ func (q *ConversionQueue) processLoop() {
 	}
 }
 
+func probeStreams(inputPath string) (vcodec, acodec, pixFmt string) {
+	out, err := exec.Command("ffprobe", "-v", "error",
+		"-show_entries", "stream=codec_type,codec_name,pix_fmt",
+		"-of", "csv=p=0", inputPath).Output()
+	if err != nil {
+		return "", "", ""
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		parts := strings.Split(line, ",")
+		switch {
+		case len(parts) >= 3 && parts[1] == "video":
+			vcodec, pixFmt = parts[0], parts[2]
+		case len(parts) >= 2 && parts[1] == "audio":
+			acodec = parts[0]
+		}
+	}
+	return
+}
+
 func (q *ConversionQueue) processJob(job *Job) error {
 	log.Printf("Processing conversion for %s: %s", job.UUID, job.InputPath)
 
@@ -182,13 +203,38 @@ func (q *ConversionQueue) processJob(job *Job) error {
 	segmentTime := fmt.Sprintf("%d", q.cfg.HLSSegmentTime)
 	listSize := fmt.Sprintf("%d", q.cfg.HLSListSize)
 
-	args := []string{
-		"-y",
-		"-i", job.InputPath,
+	vcodec, acodec, pixFmt := probeStreams(job.InputPath)
+
+	canCopyVideo := vcodec == "h264" && pixFmt == "yuv420p"
+
+	videoArgs := []string{
 		"-c:v", "libx264",
-		"-c:a", "aac",
-		"-preset", "fast",
+		"-preset", "veryfast",
 		"-crf", "23",
+		"-pix_fmt", "yuv420p", // fuerza 8-bit compatible al recodificar
+		"-sc_threshold", "0",
+		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", q.cfg.HLSSegmentTime),
+	}
+
+	if canCopyVideo {
+		videoArgs = []string{"-c:v", "copy"}
+	}
+
+	audioArgs := []string{"-c:a", "aac", "-b:a", "128k", "-ac", "2"}
+	if acodec == "aac" || acodec == "mp3" { // HLS soporta ambos
+		audioArgs = []string{"-c:a", "copy"}
+	}
+
+	args := []string{
+		"-y", "-hide_banner", "-loglevel", "error",
+		"-i", job.InputPath,
+		"-map", "0:v:0",
+		"-map", "0:a:0?", // el '?' evita error si no hay audio
+	}
+	args = append(args, videoArgs...)
+	args = append(args, audioArgs...)
+
+	args = append(args,
 		"-f", "hls",
 		"-hls_time", segmentTime,
 		"-hls_list_size", listSize,
@@ -196,7 +242,7 @@ func (q *ConversionQueue) processJob(job *Job) error {
 		"-hls_flags", "independent_segments",
 		"-hls_segment_filename", filepath.Join(job.OutputDir, job.OutputName+"_%03d."+q.segmentExt()),
 		outputPath,
-	}
+	)
 
 	cmd := exec.Command("ffmpeg", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -237,19 +283,25 @@ func (q *ConversionQueue) updateCatalogStatus(job *Job) {
 			}},
 		)
 	} else {
-		// TV show episode update
-		coll.UpdateOne(ctx,
-			bson.M{
-				"uuid":                              job.UUID,
-				"seasons.season_number":              job.Season,
-				"seasons.episodes.episode_number":    job.Episode,
-			},
+		result, err := coll.UpdateOne(ctx,
+			bson.M{"uuid": job.UUID},
 			bson.M{"$set": bson.M{
+				"status":                               "Ready",
 				"seasons.$[s].episodes.$[e].status":    "Ready",
 				"seasons.$[s].episodes.$[e].file_path": hlsPath,
-				"updated_at":                            time.Now(),
+				"updated_at":                           time.Now(),
 			}},
-			// Array filters would need to be passed as options
+			options.UpdateOne().SetArrayFilters([]interface{}{
+				bson.M{"s.season_number": job.Season},
+				bson.M{"e.episode_number": job.Episode},
+			}),
 		)
+
+		if err != nil {
+			log.Printf("catalog update failed: %v", err)
+		}
+		if result.MatchedCount == 0 {
+			log.Printf("Warning: no catalog entry found for %s S%dE%d", job.UUID, job.Season, job.Episode)
+		}
 	}
 }
