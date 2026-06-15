@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,6 +36,7 @@ func RegisterVideoRoutes(r chi.Router, client *mongo.Client, cfg *config.Config,
 	r.Get("/v1/api/videos/{vtype}/list", handleListVideosByType(client))
 	r.Get("/v1/api/videos/{id}/details", handleGetVideoDetails(client))
 	r.Get("/v1/api/videos/{id}/season/{season}", handleGetSeason(client))
+	r.Get("/v1/api/videos/image/*", handleBgImage(cfg))
 	r.Get("/v1/api/videos/stream/*", handleStream(cfg))
 	r.Get("/v1/api/videos/queue/info", handleQueueInfo(q))
 
@@ -210,6 +212,35 @@ func handleStream(cfg *config.Config) http.HandlerFunc {
 	}
 }
 
+func handleBgImage(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		filePath := chi.URLParam(r, "*")
+		// Prevent directory traversal
+		if !strings.HasPrefix(filepath.Clean(filePath), filepath.Clean(cfg.UploadFolder)) {
+			utils.Error(w, http.StatusBadRequest, "Invalid file path")
+			return
+		}
+
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			utils.Error(w, http.StatusNotFound, "File not found")
+			return
+		}
+
+		ext := strings.ToLower(filepath.Ext(filePath))
+		switch ext {
+		case ".jpg":
+			w.Header().Set("Content-Type", "image/jpeg")
+		case ".png":
+			w.Header().Set("Content-Type", "image/png")
+		case ".jpeg":
+			w.Header().Set("Content-Type", "image/jpeg")
+		}
+
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeFile(w, r, filePath)
+	}
+}
+
 func handleCreateVideo(client *mongo.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var item models.CatalogItem
@@ -260,6 +291,37 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 		}
 		defer file.Close()
 
+		const maxUploadSize = 2 * 1024 * 1024 // 5MB
+		r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+		if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+			http.Error(w, "File size exceeds the 2MB limit", http.StatusBadRequest)
+			return
+		}
+
+		image, poster, err := r.FormFile("bg_image")
+		if err != nil {
+			http.Error(w, "Invalid file or missing 'image' key", http.StatusBadRequest)
+			return
+		}
+		defer image.Close()
+
+		buff := make([]byte, 512)
+		if _, err := image.Read(buff); err != nil {
+			http.Error(w, "Failed to read file headers", http.StatusInternalServerError)
+			return
+		}
+
+		if _, err := image.Seek(0, io.SeekStart); err != nil {
+			http.Error(w, "Failed to reset file pointer", http.StatusInternalServerError)
+			return
+		}
+
+		fileType := http.DetectContentType(buff)
+		if fileType != "image/jpeg" && fileType != "image/png" && fileType != "image/jpg" {
+			http.Error(w, "Unsupported file format. Please upload JPEG, PNG, or JPG.", http.StatusBadRequest)
+			return
+		}
+
 		ext := strings.ToLower(filepath.Ext(header.Filename))
 		if !allowedExtensions[ext] {
 			utils.Error(w, http.StatusBadRequest, fmt.Sprintf("File type %s not allowed", ext))
@@ -287,6 +349,7 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 		contentUUID := uuid.New().String()
 		now := time.Now()
 		safeTitle := sanitizeFilename(title)
+		dstPath := filepath.Join(cfg.UploadFolder, safeTitle, filepath.Base(poster.Filename))
 
 		var uploadDir, outputName string
 		var season, episode int
@@ -296,6 +359,7 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			Title:     title,
 			Type:      contentType,
 			Status:    "In-Progress",
+			BGImage:   dstPath,
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
@@ -366,8 +430,20 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			return
 		}
 
+		dst, err := os.Create(dstPath)
+		if err != nil {
+			http.Error(w, "Unable to save file locally", http.StatusInternalServerError)
+			return
+		}
+		defer dst.Close()
+
+		if _, err := io.Copy(dst, image); err != nil {
+			http.Error(w, "Error saving file content", http.StatusInternalServerError)
+			return
+		}
+
 		inputPath := filepath.Join(uploadDir, header.Filename)
-		dst, err := os.Create(inputPath)
+		dst, err = os.Create(inputPath)
 		if err != nil {
 			utils.Error(w, http.StatusInternalServerError, "Failed to save file")
 			return

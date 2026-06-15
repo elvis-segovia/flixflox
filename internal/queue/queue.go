@@ -28,17 +28,18 @@ const (
 )
 
 type Job struct {
-	UUID        string     `json:"uuid"`
-	InputPath   string     `json:"input_path"`
-	OutputDir   string     `json:"output_dir"`
-	OutputName  string     `json:"output_name"`
-	ContentType string     `json:"content_type"` // "movie" or "tvshow"
-	Season      int        `json:"season,omitempty"`
-	Episode     int        `json:"episode,omitempty"`
-	Status      JobStatus  `json:"status"`
-	Error       string     `json:"error,omitempty"`
-	QueuedAt    time.Time  `json:"queued_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	UUID         string     `json:"uuid"`
+	InputPath    string     `json:"input_path"`
+	OutputDir    string     `json:"output_dir"`
+	OutputName   string     `json:"output_name"`
+	ContentType  string     `json:"content_type"` // "movie" or "tvshow"
+	ThumbailPath string     `json:"thumbail_path"`
+	Season       int        `json:"season,omitempty"`
+	Episode      int        `json:"episode,omitempty"`
+	Status       JobStatus  `json:"status"`
+	Error        string     `json:"error,omitempty"`
+	QueuedAt     time.Time  `json:"queued_at"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
 }
 
 type ConversionQueue struct {
@@ -197,6 +198,7 @@ func (q *ConversionQueue) processJob(job *Job) error {
 	if out, err := thumbCmd.CombinedOutput(); err != nil {
 		log.Printf("Thumbnail generation warning: %v, output: %s", err, string(out))
 	}
+	job.ThumbailPath = thumbnailPath
 
 	// Convert to HLS
 	outputPath := filepath.Join(job.OutputDir, job.OutputName+".m3u8")
@@ -221,7 +223,10 @@ func (q *ConversionQueue) processJob(job *Job) error {
 	}
 
 	audioArgs := []string{"-c:a", "aac", "-b:a", "128k", "-ac", "2"}
-	if acodec == "aac" || acodec == "mp3" { // HLS soporta ambos
+	switch acodec {
+	case "aac":
+		audioArgs = []string{"-c:a", "copy", "-bsf:a", "aac_adtstoasc"}
+	case "mp3":
 		audioArgs = []string{"-c:a", "copy"}
 	}
 
@@ -245,7 +250,9 @@ func (q *ConversionQueue) processJob(job *Job) error {
 	)
 
 	cmd := exec.Command("ffmpeg", args...)
+
 	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("ffmpeg conversion failed: %v, output: %s", err, string(out))
 		return fmt.Errorf("ffmpeg conversion failed: %w, output: %s", err, string(out))
 	}
 
@@ -286,10 +293,11 @@ func (q *ConversionQueue) updateCatalogStatus(job *Job) {
 		result, err := coll.UpdateOne(ctx,
 			bson.M{"uuid": job.UUID},
 			bson.M{"$set": bson.M{
-				"status":                               "Ready",
-				"seasons.$[s].episodes.$[e].status":    "Ready",
-				"seasons.$[s].episodes.$[e].file_path": hlsPath,
-				"updated_at":                           time.Now(),
+				"status":                                   "Ready",
+				"seasons.$[s].episodes.$[e].status":        "Ready",
+				"seasons.$[s].episodes.$[e].file_path":     hlsPath,
+				"seasons.$[s].episodes.$[e].thumbail_path": job.ThumbailPath,
+				"updated_at":                               time.Now(),
 			}},
 			options.UpdateOne().SetArrayFilters([]interface{}{
 				bson.M{"s.season_number": job.Season},

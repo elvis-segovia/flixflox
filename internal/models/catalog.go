@@ -11,6 +11,7 @@ type Episode struct {
 	Title           string  `json:"title,omitempty" bson:"title,omitempty"`
 	DurationSeconds float64 `json:"duration_seconds,omitempty" bson:"duration_seconds,omitempty"`
 	FilePath        string  `json:"file_path,omitempty" bson:"file_path,omitempty"`
+	ThumbailPath    string  `json:"thumbail_path,omitempty" bson:"thumbail_path,omitempty"`
 	Status          string  `json:"status,omitempty" bson:"status,omitempty"`
 	IntroStartTime  string  `json:"intro_start_time,omitempty" bson:"intro_start_time,omitempty"`
 	IntroEndTime    string  `json:"intro_end_time,omitempty" bson:"intro_end_time,omitempty"`
@@ -34,6 +35,7 @@ type CatalogItem struct {
 	Cast            []string      `json:"cast,omitempty" bson:"cast,omitempty"`
 	DurationSeconds float64       `json:"duration_seconds,omitempty" bson:"duration_seconds,omitempty"`
 	FilePath        string        `json:"file_path,omitempty" bson:"file_path,omitempty"`
+	BGImage         string        `json:"bg_image,omitempty" bson:"bg_image,omitempty"`
 	IntroStartTime  string        `json:"intro_start_time,omitempty" bson:"intro_start_time,omitempty"`
 	IntroEndTime    string        `json:"intro_end_time,omitempty" bson:"intro_end_time,omitempty"`
 	Status          string        `json:"status" bson:"status"`

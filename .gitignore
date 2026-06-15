@@ -17,3 +17,4 @@ vendor/
 # editors
 .idea/
 .vscode/
+k8s/
