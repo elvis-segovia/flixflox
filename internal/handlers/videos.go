@@ -589,11 +589,14 @@ func handleAddEpisode(client *mongo.Client, cfg *config.Config, q *queue.Convers
 
 		if seasonExists {
 			coll.UpdateOne(ctx,
-				bson.M{"uuid": contentUUID, "seasons.season_number": metadata.Season},
+				bson.M{"uuid": contentUUID},
 				bson.M{
-					"$push": bson.M{"seasons.$.episodes": newEpisode},
+					"$push": bson.M{"seasons.$[s].episodes": newEpisode},
 					"$set":  bson.M{"updated_at": time.Now()},
 				},
+				options.UpdateOne().SetArrayFilters([]interface{}{
+					bson.M{"s.season_number": metadata.Season},
+				}),
 			)
 		} else {
 			coll.UpdateOne(ctx,
