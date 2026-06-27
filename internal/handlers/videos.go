@@ -353,6 +353,12 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 
 		var uploadDir, outputName string
 		var season, episode int
+		var showDetails struct {
+			SkipIntroDisplayMessage string `json:"skip_intro_display_message"`
+			IntroStartTime          string `json:"intro_start_time"`
+			IntroEndTime            string `json:"intro_end_time,omitempty"`
+			NextEpisodeTime         string `json:"next_episode_time,omitempty"`
+		}
 
 		item := models.CatalogItem{
 			UUID:      contentUUID,
@@ -388,6 +394,21 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			}
 		}
 
+		if details, ok := values["show_details"].([]any); ok && len(details) > 0 {
+			if m, ok := details[0].(map[string]any); ok {
+				b, err := json.Marshal(m)
+				if err != nil {
+					utils.Error(w, http.StatusInternalServerError, "Error getting show details")
+					return
+				}
+
+				if err := json.Unmarshal(b, &showDetails); err != nil {
+					utils.Error(w, http.StatusInternalServerError, "Error unmarshal show details")
+					return
+				}
+			}
+		}
+
 		if contentType == "movie" {
 			uploadDir = filepath.Join(cfg.UploadFolder, safeTitle)
 			outputName = safeTitle
@@ -418,9 +439,13 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			item.Seasons = []models.Season{{
 				SeasonNumber: metadata.Season,
 				Episodes: []models.Episode{{
-					EpisodeNumber: metadata.Episode,
-					Title:         metadata.Title,
-					Status:        "In-Progress",
+					EpisodeNumber:           metadata.Episode,
+					Title:                   metadata.Title,
+					Status:                  "In-Progress",
+					SkipIntroDisplayMessage: showDetails.SkipIntroDisplayMessage,
+					IntroStartTime:          showDetails.IntroStartTime,
+					IntroEndTime:            showDetails.IntroEndTime,
+					NextEpisodeTime:         showDetails.NextEpisodeTime,
 				}},
 			}}
 		}
