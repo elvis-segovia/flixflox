@@ -1,5 +1,12 @@
 # FlixFlox
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Go 1.26](https://img.shields.io/badge/Go-1.26-00add8?logo=go&logoColor=white)](https://go.dev/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-8-47a248?logo=mongodb&logoColor=white)](https://www.mongodb.com/)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-HLS-007808?logo=ffmpeg&logoColor=white)](https://ffmpeg.org/)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ed?logo=docker&logoColor=white)](#running-with-docker)
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
+
 Self-hosted video streaming API written in Go. It ingests source video files, transcodes them to HLS via FFmpeg in a background worker queue, and serves the resulting catalog (movies and TV shows) to authenticated users with per-account viewer profiles.
 
 ## Features
@@ -33,7 +40,7 @@ internal/models/     Domain models (User, Viewer, CatalogItem, ...)
 internal/queue/      FFmpeg conversion queue
 internal/utils/      JSON helpers, password hashing, etc.
 uploads/             Default upload + HLS output directory
-openapi.yml         OpenAPI 3.0 specification
+openapi.yml          OpenAPI 3.0 specification
 ```
 
 ## Configuration
@@ -113,6 +120,10 @@ Queue control endpoints:
 - `POST /v1/api/videos/queue/start` — kick the worker if idle
 - `POST /v1/api/videos/queue/cleanup` — drop completed/failed jobs
 
+## Contributing
+
+Contributions are welcome! Please read the [Contributing Guide](./CONTRIBUTING.md) for setup instructions, conventions, and how to submit changes. Bug reports and feature requests use the issue templates, and security issues should be reported privately per the [Security Policy](./SECURITY.md).
+
 ## License
 
-Unspecified — add a `LICENSE` file before publishing.
+Released under the [MIT License](./LICENSE).
