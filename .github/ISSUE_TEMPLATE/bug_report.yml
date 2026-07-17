@@ -1,0 +1,71 @@
+name: Bug report
+description: Report something that isn't working correctly
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill in as much detail as you can.
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+      placeholder: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior, including any relevant requests (method, path, body).
+      placeholder: |
+        1. Start the server with `...`
+        2. Send `POST /v1/api/...` with body `...`
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Relevant server logs, error messages, or HTTP responses. This will be automatically formatted as code.
+      render: shell
+  - type: dropdown
+    id: run-mode
+    attributes:
+      label: How are you running FlixFlox?
+      options:
+        - Docker Compose
+        - Docker (standalone)
+        - Kubernetes
+        - go run / local binary
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Go version, FFmpeg version, MongoDB version, FlixFlox version/commit.
+      placeholder: |
+        - OS: Ubuntu 24.04
+        - Go: 1.26.3
+        - FFmpeg: 7.1
+        - MongoDB: 8.0
+        - FlixFlox: commit 54af7c0
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might help (config overrides, upload file type, etc.).
