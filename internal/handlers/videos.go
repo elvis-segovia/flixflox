@@ -35,7 +35,7 @@ func RegisterVideoRoutes(r chi.Router, client *mongo.Client, cfg *config.Config,
 	r.Get("/v1/api/videos", handleListVideos(client))
 	r.Get("/v1/api/videos/{vtype}/list", handleListVideosByType(client))
 	r.Get("/v1/api/videos/{id}/details", handleGetVideoDetails(client))
-	r.Get("/v1/api/videos/{id}/season/{season}", handleGetSeason(client))
+	r.Get("/v1/api/videos/{id}/season/{season}", handleGetVideoBySeason(client))
 	r.Get("/v1/api/videos/image/*", handleBgImage(cfg))
 	r.Get("/v1/api/videos/stream/*", handleStream(cfg))
 	r.Get("/v1/api/videos/queue/info", handleQueueInfo(q))
@@ -46,6 +46,7 @@ func RegisterVideoRoutes(r chi.Router, client *mongo.Client, cfg *config.Config,
 		r.Post("/v1/api/videos", handleCreateVideo(client))
 		r.Post("/v1/api/videos/upload", handleUploadVideo(client, cfg, q))
 		r.Put("/v1/api/videos/{id}/new-episode", handleAddEpisode(client, cfg, q))
+		r.Put("/v1/api/videos/{uuid}/season/{season}/episode/{episode}", handleUpdateVideoBySeasonAndEpisode(client))
 		r.Post("/v1/api/videos/queue/start", handleQueueStart(q))
 		r.Post("/v1/api/videos/queue/cleanup", handleQueueCleanup(q))
 	})
@@ -151,7 +152,7 @@ func handleGetVideoDetails(client *mongo.Client) http.HandlerFunc {
 	}
 }
 
-func handleGetSeason(client *mongo.Client) http.HandlerFunc {
+func handleGetVideoBySeason(client *mongo.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		contentID := chi.URLParam(r, "id")
 		seasonNum, err := strconv.Atoi(chi.URLParam(r, "season"))
@@ -178,6 +179,81 @@ func handleGetSeason(client *mongo.Client) http.HandlerFunc {
 		}
 
 		utils.Error(w, http.StatusNotFound, "Season not found")
+	}
+}
+
+func handleUpdateVideoBySeasonAndEpisode(client *mongo.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		contentUUID := chi.URLParam(r, "uuid")
+		seasonNumber, err := strconv.Atoi(chi.URLParam(r, "season"))
+		if err != nil {
+			utils.Error(w, http.StatusBadRequest, "Invalid season")
+			return
+		}
+
+		episodeNumber, err := strconv.Atoi(chi.URLParam(r, "episode"))
+		if err != nil {
+			utils.Error(w, http.StatusBadRequest, "Invalid episode")
+			return
+		}
+
+		var updates models.Episode
+		if err := utils.DecodeBody(r, &updates); err != nil {
+			utils.Error(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+
+		set := bson.M{
+			"updated_at": time.Now(),
+		}
+
+		if updates.Title != "" {
+			set["seasons.$[s].episodes.$[e].title"] = updates.Title
+		}
+
+		if updates.SkipIntroDisplayMessage != "" {
+			set["seasons.$[s].episodes.$[e].skip_intro_display_message"] = updates.SkipIntroDisplayMessage
+		}
+
+		if updates.IntroStartTime != "" {
+			set["seasons.$[s].episodes.$[e].intro_start_time"] = updates.IntroStartTime
+		}
+
+		if updates.IntroEndTime != "" {
+			set["seasons.$[s].episodes.$[e].intro_end_time"] = updates.IntroEndTime
+		}
+
+		if updates.NextEpisodeTime != "" {
+			set["seasons.$[s].episodes.$[e].next_episode_time"] = updates.NextEpisodeTime
+		}
+
+		coll := database.Collection(client, "catalog")
+
+		result, err := coll.UpdateOne(
+			ctx,
+			bson.M{"uuid": contentUUID},
+			bson.M{"$set": set},
+			options.UpdateOne().SetArrayFilters([]any{
+				bson.M{"s.season_number": seasonNumber},
+				bson.M{"e.episode_number": episodeNumber},
+			}),
+		)
+
+		if err != nil {
+			utils.Error(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		if result.MatchedCount == 0 {
+			utils.Error(w, http.StatusNotFound, fmt.Sprintf("Content %s season %v episode %v not found", contentUUID, seasonNumber, episodeNumber))
+			return
+		}
+
+		utils.JSON(w, http.StatusOK, map[string]string{
+			"message": "Episode updated successfully",
+		})
 	}
 }
 
@@ -354,6 +430,7 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 		var uploadDir, outputName string
 		var season, episode int
 		var showDetails struct {
+			Title                   string `json:"title"`
 			SkipIntroDisplayMessage string `json:"skip_intro_display_message"`
 			IntroStartTime          string `json:"intro_start_time"`
 			IntroEndTime            string `json:"intro_end_time,omitempty"`
@@ -440,7 +517,7 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 				SeasonNumber: metadata.Season,
 				Episodes: []models.Episode{{
 					EpisodeNumber:           metadata.Episode,
-					Title:                   metadata.Title,
+					Title:                   showDetails.Title,
 					Status:                  "In-Progress",
 					SkipIntroDisplayMessage: showDetails.SkipIntroDisplayMessage,
 					IntroStartTime:          showDetails.IntroStartTime,
