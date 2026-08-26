@@ -38,8 +38,6 @@ func RegisterVideoRoutes(r chi.Router, client *mongo.Client, cfg *config.Config,
 	r.Get("/v1/api/videos/{id}/season/{season}", handleGetVideoBySeason(client))
 	r.Get("/v1/api/videos/image/*", handleBgImage(cfg))
 	r.Get("/v1/api/videos/stream/*", handleStream(cfg))
-	r.Get("/v1/api/videos/queue/info", handleQueueInfo(q))
-
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(cfg.JWTSecret, client))
@@ -47,6 +45,7 @@ func RegisterVideoRoutes(r chi.Router, client *mongo.Client, cfg *config.Config,
 		r.Post("/v1/api/videos/upload", handleUploadVideo(client, cfg, q))
 		r.Put("/v1/api/videos/{id}/new-episode", handleAddEpisode(client, cfg, q))
 		r.Put("/v1/api/videos/{uuid}/season/{season}/episode/{episode}", handleUpdateVideoBySeasonAndEpisode(client))
+		r.Get("/v1/api/videos/queue/info", handleQueueInfo(q))
 		r.Post("/v1/api/videos/queue/start", handleQueueStart(q))
 		r.Post("/v1/api/videos/queue/cleanup", handleQueueCleanup(q))
 	})
@@ -733,7 +732,25 @@ func handleAddEpisode(client *mongo.Client, cfg *config.Config, q *queue.Convers
 
 func handleQueueInfo(q *queue.ConversionQueue) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		utils.Success(w, http.StatusOK, q.Info())
+		info := q.Info()
+		// Sanitize: strip absolute paths and truncate error messages to prevent
+		// leaking host filesystem layout or raw ffmpeg output to authenticated users.
+		if jobs, ok := info["jobs"].([]any); ok {
+			for _, j := range jobs {
+				if job, ok := j.(map[string]any); ok {
+					if v, ok := job["input_path"].(string); ok {
+						job["input_path"] = filepath.Base(v)
+					}
+					if v, ok := job["output_dir"].(string); ok {
+						job["output_dir"] = filepath.Base(v)
+					}
+					if v, ok := job["error"].(string); ok && len(v) > 200 {
+						job["error"] = v[:200] + "...(truncated)"
+					}
+				}
+			}
+		}
+		utils.Success(w, http.StatusOK, info)
 	}
 }
 
