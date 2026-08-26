@@ -19,7 +19,10 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Configuration error: %v", err)
+	}
 
 	db, err := database.Connect(cfg.MongoURI)
 	if err != nil {

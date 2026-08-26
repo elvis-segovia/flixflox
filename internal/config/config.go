@@ -1,11 +1,15 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
+
+const defaultJWTSecret = "change-me-in-production"
+const minJWTSecretLen = 32
 
 type Config struct {
 	MongoURI       string
@@ -22,10 +26,21 @@ type Config struct {
 	RefreshTokenTTL time.Duration
 }
 
-func Load() *Config {
+func Load() (*Config, error) {
+	jwtKey := os.Getenv("JWT_SECRET_KEY")
+	if jwtKey == "" {
+		return nil, fmt.Errorf("JWT_SECRET_KEY environment variable must be set")
+	}
+	if jwtKey == defaultJWTSecret {
+		return nil, fmt.Errorf("JWT_SECRET_KEY must not be the default value %q; generate one with: openssl rand -base64 48", defaultJWTSecret)
+	}
+	if len(jwtKey) < minJWTSecretLen {
+		return nil, fmt.Errorf("JWT_SECRET_KEY must be at least %d bytes (got %d); generate one with: openssl rand -base64 48", minJWTSecretLen, len(jwtKey))
+	}
+
 	return &Config{
 		MongoURI:        getEnv("MONGO_URI", "mongodb://localhost:27017/flixflox"),
-		JWTSecret:       []byte(getEnv("JWT_SECRET_KEY", "change-me-in-production")),
+		JWTSecret:       []byte(jwtKey),
 		CORSOrigins:     strings.Split(getEnv("CORS_ORIGIN", "http://localhost:5173"), ","),
 		UploadFolder:    getEnv("UPLOAD_FOLDER", "./uploads"),
 		Port:            getEnv("PORT", "5000"),
@@ -35,7 +50,7 @@ func Load() *Config {
 		HLSSegmentType:  getEnv("HLS_SEGMENT_TYPE", "fmp4"),
 		AccessTokenTTL:  time.Hour * 1,
 		RefreshTokenTTL: time.Hour * 24 * 30,
-	}
+	}, nil
 }
 
 func getEnv(key, fallback string) string {
