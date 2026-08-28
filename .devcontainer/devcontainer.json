@@ -4,9 +4,9 @@
   "service": "app",
   "workspaceFolder": "/workspaces/flixflox",
   "remoteUser": "root",
-  "forwardPorts": [8080, 27017],
+  "forwardPorts": [7777, 27017],
   "portsAttributes": {
-    "8080": {
+    "7777": {
       "label": "FlixFlox API",
       "onAutoForward": "notify"
     },

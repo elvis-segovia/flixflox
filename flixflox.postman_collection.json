@@ -40,7 +40,7 @@
             "register"
           ]
         },
-        "description": "Generated from cURL: curl --location 'http://localhost:5000/v1/stream/app/register' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\n    \"username\": \"elvis\",\n    \"password\": \"12345\",\n    \"email\": \"elvis@mail.com\"\n}'"
+        "description": "Generated from cURL: curl --location 'http://localhost:7777/v1/stream/app/register' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\n    \"username\": \"elvis\",\n    \"password\": \"12345\",\n    \"email\": \"elvis@mail.com\"\n}'"
       },
       "response": []
     },

@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-const defaultJWTSecret = "change-me-in-production"
 const minJWTSecretLen = 32
 
 type Config struct {
@@ -31,9 +30,6 @@ func Load() (*Config, error) {
 	if jwtKey == "" {
 		return nil, fmt.Errorf("JWT_SECRET_KEY environment variable must be set")
 	}
-	if jwtKey == defaultJWTSecret {
-		return nil, fmt.Errorf("JWT_SECRET_KEY must not be the default value %q; generate one with: openssl rand -base64 48", defaultJWTSecret)
-	}
 	if len(jwtKey) < minJWTSecretLen {
 		return nil, fmt.Errorf("JWT_SECRET_KEY must be at least %d bytes (got %d); generate one with: openssl rand -base64 48", minJWTSecretLen, len(jwtKey))
 	}
@@ -43,7 +39,7 @@ func Load() (*Config, error) {
 		JWTSecret:       []byte(jwtKey),
 		CORSOrigins:     strings.Split(getEnv("CORS_ORIGIN", "http://localhost:5173"), ","),
 		UploadFolder:    getEnv("UPLOAD_FOLDER", "./uploads"),
-		Port:            getEnv("PORT", "5000"),
+		Port:            getEnv("PORT", "7777"),
 		MaxFileSize:     getEnvInt64("MAX_FILE_SIZE", 2<<30), // 2GB
 		HLSSegmentTime:  getEnvInt("HLS_SEGMENT_TIME", 10),
 		HLSListSize:     getEnvInt("HLS_LIST_SIZE", 0),

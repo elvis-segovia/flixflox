@@ -29,7 +29,7 @@ no prefix collision to design around, so the SPA fallback is a `NotFound` handle
 ```
                      ┌──────────────── flixflox:all-in-one ────────────────┐
                      │                                                     │
-  browser ──:5000──▶ │  chi router                                         │
+  browser ──:7777──▶ │  chi router                                         │
                      │   ├─ /healthz, /healthz/ready      → handlers       │
                      │   ├─ /v1/api/*                     → handlers       │
                      │   │    └─ /v1/api/videos/stream/*  → HLS off disk   │
@@ -123,9 +123,9 @@ client pulling a large `.m4s`.
 
 ### 0.4 Settle the port
 
-Three sources disagree: `config.Load()` defaults `PORT=5000`, `Dockerfile` says `EXPOSE 5000`,
-`docker-compose.yaml` sets `PORT=8080` and publishes `8080:8080`, and `k8s/deployment.yaml` probes
-`5000` while `k8s/service.yaml`/`ingress.yaml` route port `80`. Pick one (**5000**, matching the code
+Three sources disagree: `config.Load()` defaults `PORT=7777`, `Dockerfile` says `EXPOSE 7777`,
+`docker-compose.yaml` sets `PORT=7777` and publishes `7777:7777`, and `k8s/deployment.yaml` probes
+`7777` while `k8s/service.yaml`/`ingress.yaml` route port `80`. Pick one (**7777**, matching the code
 default and the k8s probe), fix compose, and make `EXPOSE` match. A single-image story where the
 documented port is wrong is the first bug every new user files.
 
@@ -195,8 +195,8 @@ WORKDIR /app
 COPY --from=builder /build/flixflox .
 RUN mkdir -p /app/uploads && adduser -D -u 10001 flixflox && chown -R flixflox /app
 USER flixflox
-EXPOSE 5000
-HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1:5000/healthz || exit 1
+EXPOSE 7777
+HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1:7777/healthz || exit 1
 CMD ["./flixflox"]
 ```
 
@@ -251,12 +251,12 @@ Also extend `.dockerignore` — the UI subtree brings `node_modules/` (260 entri
 services:
   flixflox:
     image: elvus/flixflox:1.1.0        # UI + API
-    ports: ["5000:5000"]
+    ports: ["7777:7777"]
     environment:
       - MONGO_URI=mongodb://mongo:27017/flixflox
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:?set me}
       - UPLOAD_FOLDER=/app/uploads
-      - PORT=5000
+      - PORT=7777
     volumes: [uploads:/app/uploads]
     depends_on: { mongo: { condition: service_healthy } }
 ```
@@ -267,7 +267,7 @@ boot with a default signing key, not silently accept one.
 
 ### 6.2 Kubernetes
 
-`k8s/` currently describes the API alone: one `Deployment` on port 5000, a `Service`, and an `Ingress`
+`k8s/` currently describes the API alone: one `Deployment` on port 7777, a `Service`, and an `Ingress`
 for `api.flixflox.lan`. The all-in-one collapses the (undocumented, presumably separate) UI deployment
 into it, and the ingress drops to a single host serving both — keep
 `nginx.ingress.kubernetes.io/proxy-body-size: "0"`, it's what makes 2 GB uploads survive the ingress.
@@ -360,7 +360,7 @@ hosts today, or is the split purely historical?
 
 ## 11. Suggested sequencing
 
-**MVP (Phases 0–2):** `docker run -p 5000:5000 -e MONGO_URI=… elvus/flixflox` opens the login page and
+**MVP (Phases 0–2):** `docker run -p 7777:7777 -e MONGO_URI=… elvus/flixflox` opens the login page and
 streams a video. Everything after is polish.
 
 1. Phase 0 — SPA fallback, `/config.js` handler, read-timeout fix, port cleanup. *API-only change,

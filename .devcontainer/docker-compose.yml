@@ -6,14 +6,14 @@ services:
     volumes:
       - ../..:/workspaces:cached
       - go-mod-cache:/go/pkg/mod
-      - go-build-cache:/home/vscode/.cache/go-build
+      - go-build-cache:/root/.cache/go-build
     command: sleep infinity
     environment:
       - MONGO_URI=mongodb://mongo:27017/flixflox
-      - JWT_SECRET_KEY=dev-secret-do-not-use-in-prod
+      - JWT_SECRET_KEY=dev-only-secret-not-for-production-use-32plus
       - CORS_ORIGIN=http://localhost:5173
       - UPLOAD_FOLDER=/workspaces/flixflox/uploads
-      - PORT=8080
+      - PORT=7777
     depends_on:
       mongo:
         condition: service_healthy

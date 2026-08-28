@@ -53,7 +53,7 @@ Configuration is loaded from environment variables. A starting point is provided
 | `JWT_SECRET_KEY`   | `change-me-in-production`                | Secret used to sign JWTs                         |
 | `CORS_ORIGIN`      | `http://localhost:5173`                  | Allowed CORS origin(s), comma-separated          |
 | `UPLOAD_FOLDER`    | `./uploads`                              | Directory for uploaded files and HLS output      |
-| `PORT`             | `5000`                                   | HTTP listen port                                 |
+| `PORT`             | `7777`                                   | HTTP listen port                                 |
 | `HLS_SEGMENT_TIME` | `10`                                     | HLS segment duration in seconds                  |
 | `HLS_LIST_SIZE`    | `0`                                      | HLS playlist size (0 = unlimited)                |
 | `HLS_SEGMENT_TYPE` | `fmp4`                                   | HLS segment type (`fmp4` or `mpegts`)            |
@@ -69,7 +69,7 @@ go mod download
 go run ./cmd/server
 ```
 
-The API will listen on `http://localhost:5000`.
+The API will listen on `http://localhost:7777`.
 
 ## Running with Docker
 

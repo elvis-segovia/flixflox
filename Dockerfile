@@ -1,4 +1,6 @@
-FROM golang:1.26.3-alpine3.22 AS builder
+ARG PLATFORM=linux/amd64
+
+FROM --platform=$PLATFORM golang:1.26-alpine3.23 AS builder
 
 RUN apk add --no-cache git
 
@@ -10,7 +12,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o flixflox ./cmd/server
 
-FROM alpine:3.23.4
+FROM --platform=$PLATFORM alpine:3.23
 
 RUN apk add --no-cache ffmpeg ca-certificates tzdata
 
@@ -20,6 +22,6 @@ COPY --from=builder /build/flixflox .
 
 RUN mkdir -p /app/uploads
 
-EXPOSE 5000
+EXPOSE 7777
 
-CMD ["./flixflox"]
+CMD ["/app/flixflox"]

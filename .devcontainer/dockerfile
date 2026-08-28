@@ -13,7 +13,7 @@ RUN apk add --no-cache \
     sudo
 
 ENV GOPATH=/go \
-    GOCACHE=/home/$USERNAME/.cache/go-build \
+    GOCACHE=/root/.cache/go-build \
     PATH=/go/bin:/usr/local/go/bin:$PATH
 
 RUN mkdir -p /go/bin /go/pkg "$GOCACHE"
@@ -23,4 +23,4 @@ RUN go install golang.org/x/tools/gopls@latest \
     && go install honnef.co/go/tools/cmd/staticcheck@latest \
     && go install github.com/air-verse/air@latest
 
-WORKDIR /workspace
+WORKDIR /workspaces/flixflox

@@ -20,7 +20,7 @@ go mod download
 go run ./cmd/server
 ```
 
-The API listens on `http://localhost:5000` by default. Alternatively, run everything (API + MongoDB) with:
+The API listens on `http://localhost:7777` by default. Alternatively, run everything (API + MongoDB) with:
 
 ```bash
 docker compose up --build

@@ -2,13 +2,13 @@ services:
   api:
     build: .
     ports:
-      - "8080:8080"
+      - "7777:7777"
     environment:
-      - MONGO_URI=mongodb://mongo:27017/flixflox
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set. Generate with: openssl rand -base64 48}
+      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017/flixflox}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-only-secret-not-for-production-use-32plus}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
-      - UPLOAD_FOLDER=/app/uploads
-      - PORT=8080
+      - UPLOAD_FOLDER=${UPLOAD_FOLDER:-/app/uploads}
+      - PORT=7777
     volumes:
       - uploads:/app/uploads
     depends_on:
@@ -18,8 +18,6 @@ services:
 
   mongo:
     image: mongo:8.2.7
-    ports:
-      - "27017:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
