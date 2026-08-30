@@ -280,25 +280,36 @@ func (q *ConversionQueue) updateCatalogStatus(job *Job) {
 
 	hlsPath := filepath.Join(job.OutputDir, job.OutputName+".m3u8")
 
+	setFields := bson.M{
+		"status":     "Ready",
+		"updated_at": time.Now(),
+	}
+
+	if job.ThumbailPath != "" {
+		var current struct {
+			BGImage string `bson:"bg_image"`
+		}
+		if err := coll.FindOne(ctx, bson.M{"uuid": job.UUID}).Decode(&current); err != nil {
+			log.Printf("catalog lookup failed for %s: %v", job.UUID, err)
+		} else if current.BGImage == "" {
+			setFields["bg_image"] = job.ThumbailPath
+		}
+	}
+
 	if job.ContentType == "movie" {
+		setFields["file_path"] = hlsPath
 		coll.UpdateOne(ctx,
 			bson.M{"uuid": job.UUID},
-			bson.M{"$set": bson.M{
-				"status":     "Ready",
-				"file_path":  hlsPath,
-				"updated_at": time.Now(),
-			}},
+			bson.M{"$set": setFields},
 		)
 	} else {
+		setFields["seasons.$[s].episodes.$[e].status"] = "Ready"
+		setFields["seasons.$[s].episodes.$[e].file_path"] = hlsPath
+		setFields["seasons.$[s].episodes.$[e].thumbail_path"] = job.ThumbailPath
+
 		result, err := coll.UpdateOne(ctx,
 			bson.M{"uuid": job.UUID},
-			bson.M{"$set": bson.M{
-				"status":                                   "Ready",
-				"seasons.$[s].episodes.$[e].status":        "Ready",
-				"seasons.$[s].episodes.$[e].file_path":     hlsPath,
-				"seasons.$[s].episodes.$[e].thumbail_path": job.ThumbailPath,
-				"updated_at":                               time.Now(),
-			}},
+			bson.M{"$set": setFields},
 			options.UpdateOne().SetArrayFilters([]interface{}{
 				bson.M{"s.season_number": job.Season},
 				bson.M{"e.episode_number": job.Episode},
