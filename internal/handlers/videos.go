@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -373,28 +374,36 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			return
 		}
 
+		hasImage := true
 		image, poster, err := r.FormFile("bg_image")
 		if err != nil {
-			http.Error(w, "Invalid file or missing 'image' key", http.StatusBadRequest)
-			return
-		}
-		defer image.Close()
-
-		buff := make([]byte, 512)
-		if _, err := image.Read(buff); err != nil {
-			http.Error(w, "Failed to read file headers", http.StatusInternalServerError)
-			return
+			if errors.Is(err, http.ErrMissingFile) {
+				hasImage = false
+			} else {
+				utils.Error(w, http.StatusBadRequest, "Invalid bg_image upload")
+				return
+			}
 		}
 
-		if _, err := image.Seek(0, io.SeekStart); err != nil {
-			http.Error(w, "Failed to reset file pointer", http.StatusInternalServerError)
-			return
-		}
+		if hasImage {
+			defer image.Close()
 
-		fileType := http.DetectContentType(buff)
-		if fileType != "image/jpeg" && fileType != "image/png" && fileType != "image/jpg" {
-			http.Error(w, "Unsupported file format. Please upload JPEG, PNG, or JPG.", http.StatusBadRequest)
-			return
+			buff := make([]byte, 512)
+			if _, err := image.Read(buff); err != nil {
+				http.Error(w, "Failed to read file headers", http.StatusInternalServerError)
+				return
+			}
+
+			if _, err := image.Seek(0, io.SeekStart); err != nil {
+				http.Error(w, "Failed to reset file pointer", http.StatusInternalServerError)
+				return
+			}
+
+			fileType := http.DetectContentType(buff)
+			if fileType != "image/jpeg" && fileType != "image/png" && fileType != "image/jpg" {
+				http.Error(w, "Unsupported file format. Please upload JPEG, PNG, or JPG.", http.StatusBadRequest)
+				return
+			}
 		}
 
 		ext := strings.ToLower(filepath.Ext(header.Filename))
@@ -424,7 +433,10 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 		contentUUID := uuid.New().String()
 		now := time.Now()
 		safeTitle := sanitizeFilename(title)
-		dstPath := filepath.Join(cfg.UploadFolder, safeTitle, filepath.Base(poster.Filename))
+		dstPath := ""
+		if hasImage {
+			dstPath = filepath.Join(cfg.UploadFolder, safeTitle, filepath.Base(poster.Filename))
+		}
 
 		var uploadDir, outputName string
 		var season, episode int
@@ -531,16 +543,19 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			return
 		}
 
-		dst, err := os.Create(dstPath)
-		if err != nil {
-			http.Error(w, "Unable to save file locally", http.StatusInternalServerError)
-			return
-		}
-		defer dst.Close()
+		var dst *os.File
+		if hasImage {
+			dst, err = os.Create(dstPath)
+			if err != nil {
+				http.Error(w, "Unable to save file locally", http.StatusInternalServerError)
+				return
+			}
+			defer dst.Close()
 
-		if _, err := io.Copy(dst, image); err != nil {
-			http.Error(w, "Error saving file content", http.StatusInternalServerError)
-			return
+			if _, err := io.Copy(dst, image); err != nil {
+				http.Error(w, "Error saving file content", http.StatusInternalServerError)
+				return
+			}
 		}
 
 		inputPath := filepath.Join(uploadDir, header.Filename)
