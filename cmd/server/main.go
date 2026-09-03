@@ -45,6 +45,7 @@ func main() {
 	r.Use(chimw.ClientIPFromRemoteAddr)
 	r.Use(middleware.CORS(cfg.CORSOrigins))
 
+	handlers.RegisterFallback(r)
 	handlers.RegisterHealthRoutes(r, db)
 	handlers.RegisterAuthRoutes(r, db, cfg)
 	handlers.RegisterUserRoutes(r, db, cfg)
@@ -54,11 +55,11 @@ func main() {
 	handlers.RegisterCastRoutes(r, db, cfg)
 
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      r,
+		Addr:              ":" + cfg.Port,
+		Handler:           r,
 		ReadHeaderTimeout: 30 * time.Second,
-		WriteTimeout: 300 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		WriteTimeout:      300 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {

@@ -18,6 +18,7 @@ Self-hosted video streaming API written in Go. It ingests source video files, tr
 - Background conversion queue with status, start and cleanup endpoints
 - HLS streaming endpoint serving `.m3u8`, `.ts`, `.m4s` and `.mp4`
 - Health, ping and readiness probes
+- Consistent JSON error responses for unknown paths and unsupported methods
 - MongoDB persistence
 
 ## Tech stack
@@ -34,7 +35,7 @@ Self-hosted video streaming API written in Go. It ingests source video files, tr
 cmd/server/          Application entrypoint
 internal/config/     Environment configuration loader
 internal/database/   MongoDB client and index setup
-internal/handlers/   HTTP handlers (auth, users, viewers, videos, health)
+internal/handlers/   HTTP handlers (auth, users, viewers, videos, health, fallback)
 internal/middleware/ JWT auth, refresh and CORS middleware
 internal/models/     Domain models (User, Viewer, CatalogItem, ...)
 internal/queue/      FFmpeg conversion queue
@@ -92,6 +93,21 @@ All routes are mounted under the `/v1/api` prefix, except for the health probes 
 | Videos    | `/v1/api/videos`      | Read public, write JWT   |
 
 The full machine-readable contract is in [`openapi.yml`](./openapi.yml). Open it with any OpenAPI viewer (Swagger UI, Redoc, Stoplight, etc.) to explore endpoints, request bodies and response schemas.
+
+### Error responses
+
+Errors are always JSON, never HTML, so clients can parse a single shape for every failure:
+
+```json
+{ "status": "failed", "message": "Not found" }
+```
+
+Requests that do not match any route are handled by a router-level fallback instead of chi's plain-text defaults:
+
+| Case                                            | Status | Message              |
+| ----------------------------------------------- | ------ | -------------------- |
+| Unknown path                                     | `404`  | `Not found`          |
+| Known path, method not registered for that route | `405`  | `Method not allowed` |
 
 ### Authentication
 
