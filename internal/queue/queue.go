@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -180,6 +181,63 @@ func probeStreams(inputPath string) (vcodec, acodec, pixFmt string) {
 	return
 }
 
+// probeDuration returns the media duration via ffprobe, or 0 on failure.
+func probeDuration(inputPath string) time.Duration {
+	out, err := exec.Command("ffprobe", "-v", "error",
+		"-show_entries", "format=duration",
+		"-of", "csv=p=0", inputPath).Output()
+	if err != nil {
+		return 0
+	}
+	secs, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	if err != nil || secs <= 0 {
+		return 0
+	}
+	return time.Duration(secs * float64(time.Second))
+}
+
+// thumbnailSeekOffset picks ~10% into the title so the frame is past
+// opening blacks/logos. Falls back to 5s when duration is unknown.
+func thumbnailSeekOffset(duration time.Duration) time.Duration {
+	if duration <= 0 {
+		return 5 * time.Second
+	}
+	offset := time.Duration(float64(duration) * 0.1)
+	// Keep the seek inside the file for very short clips.
+	if offset >= duration {
+		offset = duration / 10
+		if offset <= 0 {
+			offset = duration / 2
+		}
+	}
+	return offset
+}
+
+// formatSeekTimestamp formats a duration as HH:MM:SS.mmm for ffmpeg -ss.
+func formatSeekTimestamp(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	totalMs := d.Milliseconds()
+	h := totalMs / 3_600_000
+	m := (totalMs % 3_600_000) / 60_000
+	s := (totalMs % 60_000) / 1000
+	ms := totalMs % 1000
+	return fmt.Sprintf("%02d:%02d:%02d.%03d", h, m, s, ms)
+}
+
+// thumbnailFFmpegArgs builds ffmpeg args with input seek (-ss before -i).
+func thumbnailFFmpegArgs(inputPath, thumbnailPath string, duration time.Duration) []string {
+	ss := formatSeekTimestamp(thumbnailSeekOffset(duration))
+	return []string{
+		"-y",
+		"-ss", ss,
+		"-i", inputPath,
+		"-vframes", "1",
+		thumbnailPath,
+	}
+}
+
 func (q *ConversionQueue) processJob(job *Job) error {
 	log.Printf("Processing conversion for %s: %s", job.UUID, job.InputPath)
 
@@ -187,14 +245,9 @@ func (q *ConversionQueue) processJob(job *Job) error {
 		return fmt.Errorf("failed to create output dir: %w", err)
 	}
 
-	// Generate thumbnail
+	// Generate thumbnail (input seek at ~10% of probed duration)
 	thumbnailPath := filepath.Join(job.OutputDir, "thumbnail.jpg")
-	thumbCmd := exec.Command("ffmpeg", "-y",
-		"-i", job.InputPath,
-		"-ss", "00:00:05",
-		"-vframes", "1",
-		thumbnailPath,
-	)
+	thumbCmd := exec.Command("ffmpeg", thumbnailFFmpegArgs(job.InputPath, thumbnailPath, probeDuration(job.InputPath))...)
 	if out, err := thumbCmd.CombinedOutput(); err != nil {
 		log.Printf("Thumbnail generation warning: %v, output: %s", err, string(out))
 	}
