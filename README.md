@@ -59,6 +59,8 @@ Configuration is loaded from environment variables. A starting point is provided
 | `HLS_LIST_SIZE`    | `0`                                      | HLS playlist size (0 = unlimited)                |
 | `HLS_SEGMENT_TYPE` | `fmp4`                                   | HLS segment type (`fmp4` or `mpegts`)            |
 | `MAX_FILE_SIZE`    | `2147483648`                             | Max upload size in bytes (default 2 GiB)         |
+| `COOKIE_SECURE`    | `true`                                   | Auth cookie `Secure` flag. Set `false` for plain-HTTP LAN deploys (browsers drop `Secure` cookies over `http://` except localhost). TLS in front of the API is the better answer. |
+| `COOKIE_SAMESITE`  | `lax`                                    | Auth cookie `SameSite` (`lax`, `strict`, or `none`). `none` requires `COOKIE_SECURE=true`. |
 
 ## Running locally
 
