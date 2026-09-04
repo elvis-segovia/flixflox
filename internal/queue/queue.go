@@ -222,12 +222,13 @@ func (q *ConversionQueue) processJob(job *Job) error {
 		videoArgs = []string{"-c:v", "copy"}
 	}
 
+	// Default: re-encode to AAC. Never stream-copy MP3 into HLS segments —
+	// fMP4/CMAF expects AAC/AC-3/EC-3, and Safari will play silent audio if
+	// MP3 is copied (issue #10).
 	audioArgs := []string{"-c:a", "aac", "-b:a", "128k", "-ac", "2"}
 	switch acodec {
 	case "aac":
 		audioArgs = []string{"-c:a", "copy", "-bsf:a", "aac_adtstoasc"}
-	case "mp3":
-		audioArgs = []string{"-c:a", "copy"}
 	}
 
 	args := []string{
