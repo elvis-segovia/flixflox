@@ -25,7 +25,7 @@ func RegisterAuthRoutes(r chi.Router, client *mongo.Client, cfg *config.Config) 
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(cfg.JWTSecret, client))
-		r.Delete("/v1/api/auth/logout", handleLogout(client))
+		r.Delete("/v1/api/auth/logout", handleLogout(client, cfg))
 		r.Get("/v1/api/auth/check", handleAuthCheck(client))
 	})
 }
@@ -78,24 +78,8 @@ func handleLogin(client *mongo.Client, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     "access_token",
-			Value:    accessToken,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
-			MaxAge:   int(cfg.AccessTokenTTL.Seconds()),
-		})
-		http.SetCookie(w, &http.Cookie{
-			Name:     "refresh_token",
-			Value:    refreshToken,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
-			MaxAge:   int(cfg.RefreshTokenTTL.Seconds()),
-		})
+		http.SetCookie(w, newAuthCookie(cfg, "access_token", accessToken, int(cfg.AccessTokenTTL.Seconds())))
+		http.SetCookie(w, newAuthCookie(cfg, "refresh_token", refreshToken, int(cfg.RefreshTokenTTL.Seconds())))
 
 		utils.Success(w, http.StatusOK, map[string]any{
 			"status":        "success",
@@ -226,15 +210,7 @@ func handleRefreshToken(client *mongo.Client, cfg *config.Config) http.HandlerFu
 			return
 		}
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     "access_token",
-			Value:    accessToken,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
-			MaxAge:   int(cfg.AccessTokenTTL.Seconds()),
-		})
+		http.SetCookie(w, newAuthCookie(cfg, "access_token", accessToken, int(cfg.AccessTokenTTL.Seconds())))
 
 		utils.Success(w, http.StatusOK, map[string]any{
 			"status":       "success",
@@ -243,7 +219,7 @@ func handleRefreshToken(client *mongo.Client, cfg *config.Config) http.HandlerFu
 	}
 }
 
-func handleLogout(client *mongo.Client) http.HandlerFunc {
+func handleLogout(client *mongo.Client, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims := middleware.GetClaims(r)
 		if claims == nil {
@@ -261,24 +237,8 @@ func handleLogout(client *mongo.Client) http.HandlerFunc {
 			ExpiresAt: claims.ExpiresAt.Time,
 		})
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     "access_token",
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
-		})
-		http.SetCookie(w, &http.Cookie{
-			Name:     "refresh_token",
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
-		})
+		http.SetCookie(w, newAuthCookie(cfg, "access_token", "", -1))
+		http.SetCookie(w, newAuthCookie(cfg, "refresh_token", "", -1))
 
 		utils.Success(w, http.StatusOK, map[string]any{
 			"status":  "success",
@@ -316,5 +276,17 @@ func handleAuthCheck(client *mongo.Client) http.HandlerFunc {
 			"authenticated": true,
 			"user":          user.ToResponse(),
 		})
+	}
+}
+
+func newAuthCookie(cfg *config.Config, name, value string, maxAge int) *http.Cookie {
+	return &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   cfg.CookieSecure,
+		SameSite: cfg.CookieSameSite,
+		MaxAge:   maxAge,
 	}
 }
