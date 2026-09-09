@@ -7,8 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -29,18 +27,19 @@ const (
 )
 
 type Job struct {
-	UUID         string     `json:"uuid"`
-	InputPath    string     `json:"input_path"`
-	OutputDir    string     `json:"output_dir"`
-	OutputName   string     `json:"output_name"`
-	ContentType  string     `json:"content_type"` // "movie" or "tvshow"
-	ThumbailPath string     `json:"thumbail_path"`
-	Season       int        `json:"season,omitempty"`
-	Episode      int        `json:"episode,omitempty"`
-	Status       JobStatus  `json:"status"`
-	Error        string     `json:"error,omitempty"`
-	QueuedAt     time.Time  `json:"queued_at"`
-	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	UUID            string     `json:"uuid"`
+	InputPath       string     `json:"input_path"`
+	OutputDir       string     `json:"output_dir"`
+	OutputName      string     `json:"output_name"`
+	ContentType     string     `json:"content_type"` // "movie" or "tvshow"
+	ThumbailPath    string     `json:"thumbail_path"`
+	DurationSeconds float64    `json:"duration_seconds,omitempty"`
+	Season          int        `json:"season,omitempty"`
+	Episode         int        `json:"episode,omitempty"`
+	Status          JobStatus  `json:"status"`
+	Error           string     `json:"error,omitempty"`
+	QueuedAt        time.Time  `json:"queued_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
 }
 
 type ConversionQueue struct {
@@ -162,40 +161,6 @@ func (q *ConversionQueue) processLoop() {
 	}
 }
 
-func probeStreams(inputPath string) (vcodec, acodec, pixFmt string) {
-	out, err := exec.Command("ffprobe", "-v", "error",
-		"-show_entries", "stream=codec_type,codec_name,pix_fmt",
-		"-of", "csv=p=0", inputPath).Output()
-	if err != nil {
-		return "", "", ""
-	}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		parts := strings.Split(line, ",")
-		switch {
-		case len(parts) >= 3 && parts[1] == "video":
-			vcodec, pixFmt = parts[0], parts[2]
-		case len(parts) >= 2 && parts[1] == "audio":
-			acodec = parts[0]
-		}
-	}
-	return
-}
-
-// probeDuration returns the media duration via ffprobe, or 0 on failure.
-func probeDuration(inputPath string) time.Duration {
-	out, err := exec.Command("ffprobe", "-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "csv=p=0", inputPath).Output()
-	if err != nil {
-		return 0
-	}
-	secs, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
-	if err != nil || secs <= 0 {
-		return 0
-	}
-	return time.Duration(secs * float64(time.Second))
-}
-
 // thumbnailSeekOffset picks ~10% into the title so the frame is past
 // opening blacks/logos. Falls back to 5s when duration is unknown.
 func thumbnailSeekOffset(duration time.Duration) time.Duration {
@@ -245,9 +210,13 @@ func (q *ConversionQueue) processJob(job *Job) error {
 		return fmt.Errorf("failed to create output dir: %w", err)
 	}
 
+	// One probe up front: it decides the thumbnail seek, the codec copy
+	// decisions below, and the duration written to the catalog.
+	info := probeMedia(job.InputPath)
+
 	// Generate thumbnail (input seek at ~10% of probed duration)
 	thumbnailPath := filepath.Join(job.OutputDir, "thumbnail.jpg")
-	thumbCmd := exec.Command("ffmpeg", thumbnailFFmpegArgs(job.InputPath, thumbnailPath, probeDuration(job.InputPath))...)
+	thumbCmd := exec.Command("ffmpeg", thumbnailFFmpegArgs(job.InputPath, thumbnailPath, info.Duration)...)
 	if out, err := thumbCmd.CombinedOutput(); err != nil {
 		log.Printf("Thumbnail generation warning: %v, output: %s", err, string(out))
 	}
@@ -258,9 +227,7 @@ func (q *ConversionQueue) processJob(job *Job) error {
 	segmentTime := fmt.Sprintf("%d", q.cfg.HLSSegmentTime)
 	listSize := fmt.Sprintf("%d", q.cfg.HLSListSize)
 
-	vcodec, acodec, pixFmt := probeStreams(job.InputPath)
-
-	canCopyVideo := vcodec == "h264" && pixFmt == "yuv420p"
+	canCopyVideo := info.VideoCodec == "h264" && info.PixFmt == "yuv420p"
 
 	videoArgs := []string{
 		"-c:v", "libx264",
@@ -279,7 +246,7 @@ func (q *ConversionQueue) processJob(job *Job) error {
 	// fMP4/CMAF expects AAC/AC-3/EC-3, and Safari will play silent audio if
 	// MP3 is copied (issue #10).
 	audioArgs := []string{"-c:a", "aac", "-b:a", "128k", "-ac", "2"}
-	switch acodec {
+	switch info.AudioCodec {
 	case "aac":
 		audioArgs = []string{"-c:a", "copy", "-bsf:a", "aac_adtstoasc"}
 	}
@@ -308,6 +275,17 @@ func (q *ConversionQueue) processJob(job *Job) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Printf("ffmpeg conversion failed: %v, output: %s", err, string(out))
 		return fmt.Errorf("ffmpeg conversion failed: %w, output: %s", err, string(out))
+	}
+
+	// Duration comes from the source probe; when that failed, the playlist we
+	// just wrote is authoritative — and it outlives the source file.
+	job.DurationSeconds = info.Duration.Seconds()
+	if job.DurationSeconds <= 0 {
+		if secs, err := PlaylistDurationSeconds(outputPath); err != nil {
+			log.Printf("duration unknown for %s: %v", job.UUID, err)
+		} else {
+			job.DurationSeconds = secs
+		}
 	}
 
 	// Remove original file
@@ -352,14 +330,25 @@ func (q *ConversionQueue) updateCatalogStatus(job *Job) {
 
 	if job.ContentType == "movie" {
 		setFields["file_path"] = hlsPath
-		coll.UpdateOne(ctx,
+		if job.DurationSeconds > 0 {
+			setFields["duration_seconds"] = job.DurationSeconds
+		}
+		result, err := coll.UpdateOne(ctx,
 			bson.M{"uuid": job.UUID},
 			bson.M{"$set": setFields},
 		)
+		if err != nil {
+			log.Printf("catalog update failed for %s: %v", job.UUID, err)
+		} else if result.MatchedCount == 0 {
+			log.Printf("Warning: no catalog entry found for %s", job.UUID)
+		}
 	} else {
 		setFields["seasons.$[s].episodes.$[e].status"] = "Ready"
 		setFields["seasons.$[s].episodes.$[e].file_path"] = hlsPath
 		setFields["seasons.$[s].episodes.$[e].thumbail_path"] = job.ThumbailPath
+		if job.DurationSeconds > 0 {
+			setFields["seasons.$[s].episodes.$[e].duration_seconds"] = job.DurationSeconds
+		}
 
 		result, err := coll.UpdateOne(ctx,
 			bson.M{"uuid": job.UUID},
@@ -372,8 +361,7 @@ func (q *ConversionQueue) updateCatalogStatus(job *Job) {
 
 		if err != nil {
 			log.Printf("catalog update failed: %v", err)
-		}
-		if result.MatchedCount == 0 {
+		} else if result.MatchedCount == 0 {
 			log.Printf("Warning: no catalog entry found for %s S%dE%d", job.UUID, job.Season, job.Episode)
 		}
 	}

@@ -19,7 +19,7 @@ services:
   mongo:
     image: mongo:8.2.7
     volumes:
-      - mongo_data:/data/db
+      - ./mongo_data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
