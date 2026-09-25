@@ -12,6 +12,7 @@ import (
 
 	"github.com/elvis/flixflox/internal/config"
 	"github.com/elvis/flixflox/internal/database"
+	"github.com/elvis/flixflox/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -206,24 +207,22 @@ func thumbnailFFmpegArgs(inputPath, thumbnailPath string, duration time.Duration
 func (q *ConversionQueue) processJob(job *Job) error {
 	log.Printf("Processing conversion for %s: %s", job.UUID, job.InputPath)
 
-	if err := os.MkdirAll(job.OutputDir, 0755); err != nil {
+	fullPath := storage.Resolve(q.cfg.UploadFolder, job.OutputDir)
+
+	if err := os.MkdirAll(fullPath, 0755); err != nil {
 		return fmt.Errorf("failed to create output dir: %w", err)
 	}
 
-	// One probe up front: it decides the thumbnail seek, the codec copy
-	// decisions below, and the duration written to the catalog.
 	info := probeMedia(job.InputPath)
 
-	// Generate thumbnail (input seek at ~10% of probed duration)
-	thumbnailPath := filepath.Join(job.OutputDir, "thumbnail.jpg")
+	thumbnailPath := filepath.Join(fullPath, storage.ThumbnailName)
 	thumbCmd := exec.Command("ffmpeg", thumbnailFFmpegArgs(job.InputPath, thumbnailPath, info.Duration)...)
 	if out, err := thumbCmd.CombinedOutput(); err != nil {
 		log.Printf("Thumbnail generation warning: %v, output: %s", err, string(out))
 	}
-	job.ThumbailPath = thumbnailPath
+	job.ThumbailPath = filepath.Join(job.OutputDir, storage.ThumbnailName)
 
-	// Convert to HLS
-	outputPath := filepath.Join(job.OutputDir, job.OutputName+".m3u8")
+	outputPath := filepath.Join(fullPath, storage.PlaylistFile(job.OutputName))
 	segmentTime := fmt.Sprintf("%d", q.cfg.HLSSegmentTime)
 	listSize := fmt.Sprintf("%d", q.cfg.HLSListSize)
 
@@ -242,9 +241,6 @@ func (q *ConversionQueue) processJob(job *Job) error {
 		videoArgs = []string{"-c:v", "copy"}
 	}
 
-	// Default: re-encode to AAC. Never stream-copy MP3 into HLS segments —
-	// fMP4/CMAF expects AAC/AC-3/EC-3, and Safari will play silent audio if
-	// MP3 is copied (issue #10).
 	audioArgs := []string{"-c:a", "aac", "-b:a", "128k", "-ac", "2"}
 	switch info.AudioCodec {
 	case "aac":
@@ -266,7 +262,7 @@ func (q *ConversionQueue) processJob(job *Job) error {
 		"-hls_list_size", listSize,
 		"-hls_segment_type", q.cfg.HLSSegmentType,
 		"-hls_flags", "independent_segments",
-		"-hls_segment_filename", filepath.Join(job.OutputDir, job.OutputName+"_%03d."+q.segmentExt()),
+		"-hls_segment_filename", filepath.Join(fullPath, storage.SegmentPattern(job.OutputName, q.segmentExt())),
 		outputPath,
 	)
 
@@ -277,8 +273,6 @@ func (q *ConversionQueue) processJob(job *Job) error {
 		return fmt.Errorf("ffmpeg conversion failed: %w, output: %s", err, string(out))
 	}
 
-	// Duration comes from the source probe; when that failed, the playlist we
-	// just wrote is authoritative — and it outlives the source file.
 	job.DurationSeconds = info.Duration.Seconds()
 	if job.DurationSeconds <= 0 {
 		if secs, err := PlaylistDurationSeconds(outputPath); err != nil {
@@ -310,7 +304,7 @@ func (q *ConversionQueue) updateCatalogStatus(job *Job) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	hlsPath := filepath.Join(job.OutputDir, job.OutputName+".m3u8")
+	hlsPath := filepath.Join(job.OutputDir, storage.PlaylistFile(job.OutputName))
 
 	setFields := bson.M{
 		"status":     "Ready",

@@ -39,8 +39,12 @@ internal/handlers/   HTTP handlers (auth, users, viewers, videos, health, fallba
 internal/middleware/ JWT auth, refresh and CORS middleware
 internal/models/     Domain models (User, Viewer, CatalogItem, ...)
 internal/queue/      FFmpeg conversion queue
+internal/storage/    Upload folder layout (paths relative to UPLOAD_FOLDER)
 internal/utils/      JSON helpers, password hashing, etc.
 uploads/             Default upload + HLS output directory
+  movies/<title>/                 Movie source, poster, playlist and segments
+  tv-shows/<title>/               Show poster
+  tv-shows/<title>/S01/E02/       Episode source, playlist and segments
 openapi.yml          OpenAPI 3.0 specification
 ```
 
@@ -51,7 +55,7 @@ Configuration is loaded from environment variables. A starting point is provided
 | Variable           | Default                                  | Description                                      |
 | ------------------ | ---------------------------------------- | ------------------------------------------------ |
 | `MONGO_URI`        | `mongodb://localhost:27017/flixflox`     | MongoDB connection string                        |
-| `JWT_SECRET_KEY`   | `change-me-in-production`                | Secret used to sign JWTs                         |
+| `JWT_SECRET_KEY`   | _(required)_                             | Secret used to sign JWTs. No default: the server refuses to start unless it is set and at least 32 bytes long. Generate one with `openssl rand -base64 48`. |
 | `CORS_ORIGIN`      | `http://localhost:5173`                  | Allowed CORS origin(s), comma-separated          |
 | `UPLOAD_FOLDER`    | `./uploads`                              | Directory for uploaded files and HLS output      |
 | `PORT`             | `7777`                                   | HTTP listen port                                 |
@@ -68,6 +72,10 @@ Prerequisites: Go 1.26+, MongoDB, FFmpeg available on `PATH`.
 
 ```bash
 cp .env.example .env
+# Nothing in the app parses .env — the config loader reads the process
+# environment, so export the variables into your shell first.
+set -a && source .env && set +a
+export JWT_SECRET_KEY=$(openssl rand -base64 48)
 go mod download
 go run ./cmd/server
 ```
@@ -132,9 +140,9 @@ Requests that do not match any route are handled by a router-level fallback inst
 
 The file is saved to disk, a catalog entry is created, and a job is pushed onto the conversion queue. Adding more episodes to an existing TV show uses `PUT /v1/api/videos/{id}/new-episode`.
 
-Queue control endpoints:
+Queue control endpoints (all require JWT):
 
-- `GET  /v1/api/videos/queue/info` — current queue snapshot
+- `GET  /v1/api/videos/queue/info` — current queue snapshot, with job paths reduced to their base filename and error messages truncated
 - `POST /v1/api/videos/queue/start` — kick the worker if idle
 - `POST /v1/api/videos/queue/cleanup` — drop completed/failed jobs
 
