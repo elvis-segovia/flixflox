@@ -18,6 +18,7 @@ import (
 	"github.com/elvis/flixflox/internal/middleware"
 	"github.com/elvis/flixflox/internal/models"
 	"github.com/elvis/flixflox/internal/queue"
+	"github.com/elvis/flixflox/internal/storage"
 	"github.com/elvis/flixflox/internal/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -29,6 +30,43 @@ import (
 var allowedExtensions = map[string]bool{
 	".mp4": true, ".avi": true, ".flv": true, ".mkv": true,
 	".mov": true, ".wmv": true, ".webm": true,
+}
+
+type episodeMetadata struct {
+	Season  int    `json:"season"`
+	Episode int    `json:"episode"`
+	Title   string `json:"title"`
+}
+
+func parseEpisodeMetadata(r *http.Request) episodeMetadata {
+	var metadata episodeMetadata
+	if metaStr := r.FormValue("metadata"); metaStr != "" {
+		json.Unmarshal([]byte(metaStr), &metadata)
+	}
+	if metadata.Season == 0 {
+		metadata.Season = 1
+	}
+	if metadata.Episode == 0 {
+		metadata.Episode = 1
+	}
+	return metadata
+}
+
+func videoExtAllowed(filename string) bool {
+	return allowedExtensions[strings.ToLower(filepath.Ext(filename))]
+}
+
+func saveUploadedFile(path string, src io.Reader) error {
+	dst, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return err
+	}
+	return dst.Close()
 }
 
 func RegisterVideoRoutes(r chi.Router, client *mongo.Client, cfg *config.Config, q *queue.ConversionQueue) {
@@ -259,19 +297,20 @@ func handleUpdateVideoBySeasonAndEpisode(client *mongo.Client) http.HandlerFunc 
 
 func handleStream(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		filePath := chi.URLParam(r, "*")
-		// Prevent directory traversal
-		if !strings.HasPrefix(filepath.Clean(filePath), filepath.Clean(cfg.UploadFolder)) {
+		root, err := os.OpenRoot(cfg.UploadFolder)
+		if err != nil {
+			utils.Error(w, http.StatusBadRequest, fmt.Sprintf("Invalid file path %v", err))
+			return
+		}
+
+		relPath := filepath.Clean(chi.URLParam(r, "*"))
+		if relPath == "." || filepath.IsAbs(relPath) {
 			utils.Error(w, http.StatusBadRequest, "Invalid file path")
 			return
 		}
 
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			utils.Error(w, http.StatusNotFound, "File not found")
-			return
-		}
+		ext := strings.ToLower(filepath.Ext(relPath))
 
-		ext := strings.ToLower(filepath.Ext(filePath))
 		switch ext {
 		case ".m3u8":
 			w.Header().Set("Content-Type", "application/x-mpegURL")
@@ -284,25 +323,26 @@ func handleStream(cfg *config.Config) http.HandlerFunc {
 		}
 
 		w.Header().Set("Cache-Control", "no-cache")
-		http.ServeFile(w, r, filePath)
+		http.ServeFileFS(w, r, root.FS(), relPath)
 	}
 }
 
 func handleBgImage(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		filePath := chi.URLParam(r, "*")
-		// Prevent directory traversal
-		if !strings.HasPrefix(filepath.Clean(filePath), filepath.Clean(cfg.UploadFolder)) {
+		root, err := os.OpenRoot(cfg.UploadFolder)
+		if err != nil {
+			utils.Error(w, http.StatusBadRequest, fmt.Sprintf("Invalid file path %s", cfg.UploadFolder))
+			return
+		}
+
+		relPath := filepath.Clean(chi.URLParam(r, "*"))
+		if relPath == "." || filepath.IsAbs(relPath) {
+			fmt.Printf("relPath: %s", relPath)
 			utils.Error(w, http.StatusBadRequest, "Invalid file path")
 			return
 		}
 
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			utils.Error(w, http.StatusNotFound, "File not found")
-			return
-		}
-
-		ext := strings.ToLower(filepath.Ext(filePath))
+		ext := strings.ToLower(filepath.Ext(relPath))
 		switch ext {
 		case ".jpg":
 			w.Header().Set("Content-Type", "image/jpeg")
@@ -313,7 +353,7 @@ func handleBgImage(cfg *config.Config) http.HandlerFunc {
 		}
 
 		w.Header().Set("Cache-Control", "no-cache")
-		http.ServeFile(w, r, filePath)
+		http.ServeFileFS(w, r, root.FS(), relPath)
 	}
 }
 
@@ -406,9 +446,8 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			}
 		}
 
-		ext := strings.ToLower(filepath.Ext(header.Filename))
-		if !allowedExtensions[ext] {
-			utils.Error(w, http.StatusBadRequest, fmt.Sprintf("File type %s not allowed", ext))
+		if !videoExtAllowed(header.Filename) {
+			utils.Error(w, http.StatusBadRequest, fmt.Sprintf("File type %s not allowed", filepath.Ext(header.Filename)))
 			return
 		}
 
@@ -432,14 +471,7 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 
 		contentUUID := uuid.New().String()
 		now := time.Now()
-		safeTitle := sanitizeFilename(title)
-		dstPath := ""
-		if hasImage {
-			dstPath = filepath.Join(cfg.UploadFolder, safeTitle, filepath.Base(poster.Filename))
-		}
 
-		var uploadDir, outputName string
-		var season, episode int
 		var showDetails struct {
 			Title                   string `json:"title"`
 			SkipIntroDisplayMessage string `json:"skip_intro_display_message"`
@@ -448,14 +480,27 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			NextEpisodeTime         string `json:"next_episode_time,omitempty"`
 		}
 
+		var layout storage.Layout
+		var season, episode int
+		if contentType == "movie" {
+			layout = storage.MovieLayout(title)
+		} else {
+			metadata := parseEpisodeMetadata(r)
+			season, episode = metadata.Season, metadata.Episode
+			layout = storage.EpisodeLayout(title, season, episode)
+		}
+
 		item := models.CatalogItem{
 			UUID:      contentUUID,
 			Title:     title,
 			Type:      contentType,
 			Status:    "In-Progress",
-			BGImage:   dstPath,
 			CreatedAt: now,
 			UpdatedAt: now,
+		}
+
+		if hasImage {
+			item.BGImage = filepath.Join(layout.TitleDir, filepath.Base(poster.Filename))
 		}
 
 		if ry, ok := values["release_year"].(float64); ok {
@@ -497,37 +542,11 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			}
 		}
 
-		if contentType == "movie" {
-			uploadDir = filepath.Join(cfg.UploadFolder, safeTitle)
-			outputName = safeTitle
-		} else {
-			var metadata struct {
-				Season  int    `json:"season"`
-				Episode int    `json:"episode"`
-				Title   string `json:"title"`
-			}
-			if metaStr := r.FormValue("metadata"); metaStr != "" {
-				json.Unmarshal([]byte(metaStr), &metadata)
-			}
-			if metadata.Season == 0 {
-				metadata.Season = 1
-			}
-			if metadata.Episode == 0 {
-				metadata.Episode = 1
-			}
-
-			season = metadata.Season
-			episode = metadata.Episode
-
-			uploadDir = filepath.Join(cfg.UploadFolder, safeTitle,
-				fmt.Sprintf("S%02d", metadata.Season),
-				fmt.Sprintf("E%02d", metadata.Episode))
-			outputName = fmt.Sprintf("%s_S%02dE%02d", safeTitle, metadata.Season, metadata.Episode)
-
+		if contentType != "movie" {
 			item.Seasons = []models.Season{{
-				SeasonNumber: metadata.Season,
+				SeasonNumber: season,
 				Episodes: []models.Episode{{
-					EpisodeNumber:           metadata.Episode,
+					EpisodeNumber:           episode,
 					Title:                   showDetails.Title,
 					Status:                  "In-Progress",
 					SkipIntroDisplayMessage: showDetails.SkipIntroDisplayMessage,
@@ -538,48 +557,31 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			}}
 		}
 
-		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		fullPath := storage.Resolve(cfg.UploadFolder, layout.Dir)
+
+		if err := os.MkdirAll(fullPath, 0755); err != nil {
 			utils.Error(w, http.StatusInternalServerError, "Failed to create upload directory")
 			return
 		}
 
-		var dst *os.File
 		if hasImage {
-			dst, err = os.Create(dstPath)
-			if err != nil {
-				http.Error(w, "Unable to save file locally", http.StatusInternalServerError)
+			posterDir := storage.Resolve(cfg.UploadFolder, layout.TitleDir)
+			if err := os.MkdirAll(posterDir, 0755); err != nil {
+				utils.Error(w, http.StatusInternalServerError, "Failed to create upload directory")
 				return
 			}
-			defer dst.Close()
 
-			if _, err := io.Copy(dst, image); err != nil {
-				http.Error(w, "Error saving file content", http.StatusInternalServerError)
+			if err := saveUploadedFile(filepath.Join(posterDir, filepath.Base(poster.Filename)), image); err != nil {
+				utils.Error(w, http.StatusInternalServerError, "Unable to save image locally")
 				return
 			}
 		}
 
-		inputPath := filepath.Join(uploadDir, header.Filename)
-		dst, err = os.Create(inputPath)
-		if err != nil {
+		inputPath := filepath.Join(fullPath, header.Filename)
+		if err := saveUploadedFile(inputPath, file); err != nil {
 			utils.Error(w, http.StatusInternalServerError, "Failed to save file")
 			return
 		}
-
-		buf := make([]byte, 32*1024)
-		for {
-			n, readErr := file.Read(buf)
-			if n > 0 {
-				if _, writeErr := dst.Write(buf[:n]); writeErr != nil {
-					dst.Close()
-					utils.Error(w, http.StatusInternalServerError, "Failed to write file")
-					return
-				}
-			}
-			if readErr != nil {
-				break
-			}
-		}
-		dst.Close()
 
 		coll := database.Collection(client, "catalog")
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -594,8 +596,8 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 		q.Add(queue.Job{
 			UUID:        contentUUID,
 			InputPath:   inputPath,
-			OutputDir:   uploadDir,
-			OutputName:  outputName,
+			OutputDir:   layout.Dir,
+			OutputName:  layout.OutputName,
 			ContentType: contentType,
 			Season:      season,
 			Episode:     episode,
@@ -625,20 +627,12 @@ func handleAddEpisode(client *mongo.Client, cfg *config.Config, q *queue.Convers
 		}
 		defer file.Close()
 
-		ext := strings.ToLower(filepath.Ext(header.Filename))
-		if !allowedExtensions[ext] {
-			utils.Error(w, http.StatusBadRequest, fmt.Sprintf("File type %s not allowed", ext))
+		if !videoExtAllowed(header.Filename) {
+			utils.Error(w, http.StatusBadRequest, fmt.Sprintf("File type %s not allowed", filepath.Ext(header.Filename)))
 			return
 		}
 
-		var metadata struct {
-			Season  int    `json:"season"`
-			Episode int    `json:"episode"`
-			Title   string `json:"title"`
-		}
-		if metaStr := r.FormValue("metadata"); metaStr != "" {
-			json.Unmarshal([]byte(metaStr), &metadata)
-		}
+		metadata := parseEpisodeMetadata(r)
 
 		coll := database.Collection(client, "catalog")
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -655,39 +649,19 @@ func handleAddEpisode(client *mongo.Client, cfg *config.Config, q *queue.Convers
 			return
 		}
 
-		safeTitle := sanitizeFilename(item.Title)
-		uploadDir := filepath.Join(cfg.UploadFolder, safeTitle,
-			fmt.Sprintf("S%02d", metadata.Season),
-			fmt.Sprintf("E%02d", metadata.Episode))
-		outputName := fmt.Sprintf("%s_S%02dE%02d", safeTitle, metadata.Season, metadata.Episode)
+		layout := storage.EpisodeLayout(item.Title, metadata.Season, metadata.Episode)
+		fullPath := storage.Resolve(cfg.UploadFolder, layout.Dir)
 
-		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		if err := os.MkdirAll(fullPath, 0755); err != nil {
 			utils.Error(w, http.StatusInternalServerError, "Failed to create directory")
 			return
 		}
 
-		inputPath := filepath.Join(uploadDir, header.Filename)
-		dst, err := os.Create(inputPath)
-		if err != nil {
+		inputPath := filepath.Join(fullPath, header.Filename)
+		if err := saveUploadedFile(inputPath, file); err != nil {
 			utils.Error(w, http.StatusInternalServerError, "Failed to save file")
 			return
 		}
-
-		buf := make([]byte, 32*1024)
-		for {
-			n, readErr := file.Read(buf)
-			if n > 0 {
-				if _, writeErr := dst.Write(buf[:n]); writeErr != nil {
-					dst.Close()
-					utils.Error(w, http.StatusInternalServerError, "Failed to write file")
-					return
-				}
-			}
-			if readErr != nil {
-				break
-			}
-		}
-		dst.Close()
 
 		newEpisode := models.Episode{
 			EpisodeNumber: metadata.Episode,
@@ -730,8 +704,8 @@ func handleAddEpisode(client *mongo.Client, cfg *config.Config, q *queue.Convers
 		q.Add(queue.Job{
 			UUID:        contentUUID,
 			InputPath:   inputPath,
-			OutputDir:   uploadDir,
-			OutputName:  outputName,
+			OutputDir:   layout.Dir,
+			OutputName:  layout.OutputName,
 			ContentType: "tvshow",
 			Season:      metadata.Season,
 			Episode:     metadata.Episode,
@@ -787,13 +761,4 @@ func handleQueueCleanup(q *queue.ConversionQueue) http.HandlerFunc {
 			"removed": removed,
 		})
 	}
-}
-
-func sanitizeFilename(name string) string {
-	replacer := strings.NewReplacer(
-		" ", "_", "/", "_", "\\", "_", ":", "_",
-		"*", "_", "?", "_", "\"", "_", "<", "_",
-		">", "_", "|", "_",
-	)
-	return strings.ToLower(replacer.Replace(name))
 }
