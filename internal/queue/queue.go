@@ -270,7 +270,9 @@ func (q *ConversionQueue) processJob(job *Job) error {
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Printf("ffmpeg conversion failed: %v, output: %s", err, string(out))
-		return fmt.Errorf("ffmpeg conversion failed: %w, output: %s", err, string(out))
+		// Job.Error is served by the queue info endpoint: keep the tail,
+		// where ffmpeg says why it failed. The full output is logged above.
+		return fmt.Errorf("ffmpeg conversion failed: %w, output: %s", err, ffmpegErrorTail(out))
 	}
 
 	job.DurationSeconds = info.Duration.Seconds()

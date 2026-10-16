@@ -59,6 +59,12 @@ migration, which is why this is a major release rather than `1.3.0`.
 - README documents the upload folder layout, the `internal/storage` package,
   and the JWT and queue-endpoint requirements introduced in 1.2.0.
 
+### Fixed
+
+- A failed conversion stores only the last 15 lines (at most 2 KiB) of ffmpeg's
+  output in the job's `error`, instead of the entire output. That error is
+  served by `GET /v1/api/videos/queue/info`. The full output is still logged.
+
 ## [1.2.0] - 2026-09-08
 
 ### Breaking
