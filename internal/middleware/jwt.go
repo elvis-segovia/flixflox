@@ -87,7 +87,7 @@ func isTokenBlacklisted(client *mongo.Client, jti string) bool {
 func JWTAuth(secret []byte, client *mongo.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tokenString := extractToken(r)
+			tokenString := extractToken(r, "access_token")
 			if tokenString == "" {
 				utils.Error(w, http.StatusUnauthorized, "Missing authorization token")
 				return
@@ -96,6 +96,11 @@ func JWTAuth(secret []byte, client *mongo.Client) func(http.Handler) http.Handle
 			claims, err := parseToken(secret, tokenString)
 			if err != nil {
 				utils.Error(w, http.StatusUnauthorized, "Invalid or expired token")
+				return
+			}
+
+			if claims.TokenType != "access" {
+				utils.Error(w, http.StatusUnauthorized, "Not an access token")
 				return
 			}
 
@@ -113,7 +118,7 @@ func JWTAuth(secret []byte, client *mongo.Client) func(http.Handler) http.Handle
 func JWTRefresh(secret []byte, client *mongo.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tokenString := extractToken(r)
+			tokenString := extractToken(r, "refresh_token")
 			if tokenString == "" {
 				utils.Error(w, http.StatusUnauthorized, "Missing refresh token")
 				return
@@ -141,17 +146,14 @@ func JWTRefresh(secret []byte, client *mongo.Client) func(http.Handler) http.Han
 	}
 }
 
-func extractToken(r *http.Request) string {
-	// Check Authorization header first
+// extractToken returns a Bearer token or the named cookie. cookieName must be
+// "access_token" or "refresh_token" so auth and refresh never share fallthrough.
+func extractToken(r *http.Request, cookieName string) string {
 	auth := r.Header.Get("Authorization")
 	if strings.HasPrefix(auth, "Bearer ") {
 		return strings.TrimPrefix(auth, "Bearer ")
 	}
-	// Fall back to cookie
-	if cookie, err := r.Cookie("access_token"); err == nil {
-		return cookie.Value
-	}
-	if cookie, err := r.Cookie("refresh_token"); err == nil {
+	if cookie, err := r.Cookie(cookieName); err == nil {
 		return cookie.Value
 	}
 	return ""
