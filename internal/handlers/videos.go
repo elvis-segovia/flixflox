@@ -69,6 +69,92 @@ func saveUploadedFile(path string, src io.Reader) error {
 	return dst.Close()
 }
 
+// resolveSourceFile confines an upload-root-relative path taken from a request
+// body to the upload folder and returns the path the queue should read. The
+// queue feeds it to ffmpeg and deletes it once the conversion succeeds, and the
+// bot route is unauthenticated, so a path that escapes the root must never
+// reach a job.
+func resolveSourceFile(uploadFolder, relPath string) (string, error) {
+	if !videoExtAllowed(relPath) {
+		return "", fmt.Errorf("file type %s not allowed", filepath.Ext(relPath))
+	}
+
+	clean := filepath.Clean(relPath)
+	if clean == "." || filepath.IsAbs(clean) {
+		return "", fmt.Errorf("invalid source path")
+	}
+
+	root, err := os.OpenRoot(uploadFolder)
+	if err != nil {
+		return "", fmt.Errorf("upload folder unavailable")
+	}
+	defer root.Close()
+
+	// root.Open refuses traversal and symlinks that leave the upload folder.
+	f, err := root.Open(clean)
+	if err != nil {
+		return "", fmt.Errorf("source file not found: %s", relPath)
+	}
+	defer f.Close()
+
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		return "", fmt.Errorf("source file not found: %s", relPath)
+	}
+
+	return storage.Resolve(uploadFolder, clean), nil
+}
+
+// conversionJobs turns the source files a created catalog item points at into
+// queue jobs: file_path on the item for a movie, on each episode for a show.
+// An item that names no source file simply produces no jobs.
+func conversionJobs(cfg *config.Config, item models.CatalogItem) ([]queue.Job, error) {
+	if item.Type == "movie" {
+		if item.FilePath == "" {
+			return nil, nil
+		}
+
+		inputPath, err := resolveSourceFile(cfg.UploadFolder, item.FilePath)
+		if err != nil {
+			return nil, err
+		}
+
+		layout := storage.MovieLayout(item.Title)
+		return []queue.Job{{
+			UUID:        item.UUID,
+			InputPath:   inputPath,
+			OutputDir:   layout.Dir,
+			OutputName:  layout.OutputName,
+			ContentType: item.Type,
+		}}, nil
+	}
+
+	var jobs []queue.Job
+	for _, season := range item.Seasons {
+		for _, episode := range season.Episodes {
+			if episode.FilePath == "" {
+				continue
+			}
+
+			inputPath, err := resolveSourceFile(cfg.UploadFolder, episode.FilePath)
+			if err != nil {
+				return nil, err
+			}
+
+			layout := storage.EpisodeLayout(item.Title, season.SeasonNumber, episode.EpisodeNumber)
+			jobs = append(jobs, queue.Job{
+				UUID:        item.UUID,
+				InputPath:   inputPath,
+				OutputDir:   layout.Dir,
+				OutputName:  layout.OutputName,
+				ContentType: item.Type,
+				Season:      season.SeasonNumber,
+				Episode:     episode.EpisodeNumber,
+			})
+		}
+	}
+	return jobs, nil
+}
+
 func RegisterVideoRoutes(r chi.Router, client *mongo.Client, cfg *config.Config, q *queue.ConversionQueue) {
 	// Public routes
 	r.Get("/v1/api/videos", handleListVideos(client))
@@ -77,10 +163,12 @@ func RegisterVideoRoutes(r chi.Router, client *mongo.Client, cfg *config.Config,
 	r.Get("/v1/api/videos/{id}/season/{season}", handleGetVideoBySeason(client))
 	r.Get("/v1/api/videos/image/*", handleBgImage(cfg))
 	r.Get("/v1/api/videos/stream/*", handleStream(cfg))
+	r.Post("/v1/api/bot/videos", handleCreateVideo(client, cfg, q))
+
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(cfg.JWTSecret, client))
-		r.Post("/v1/api/videos", handleCreateVideo(client))
+		r.Post("/v1/api/videos", handleCreateVideo(client, cfg, q))
 		r.Post("/v1/api/videos/upload", handleUploadVideo(client, cfg, q))
 		r.Put("/v1/api/videos/{id}/new-episode", handleAddEpisode(client, cfg, q))
 		r.Put("/v1/api/videos/{uuid}/season/{season}/episode/{episode}", handleUpdateVideoBySeasonAndEpisode(client))
@@ -357,7 +445,7 @@ func handleBgImage(cfg *config.Config) http.HandlerFunc {
 	}
 }
 
-func handleCreateVideo(client *mongo.Client) http.HandlerFunc {
+func handleCreateVideo(client *mongo.Client, cfg *config.Config, q *queue.ConversionQueue) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var item models.CatalogItem
 		if err := utils.DecodeBody(r, &item); err != nil {
@@ -376,6 +464,14 @@ func handleCreateVideo(client *mongo.Client) http.HandlerFunc {
 		item.CreatedAt = now
 		item.UpdatedAt = now
 
+		// Resolve the source files before inserting, so a bad path fails the
+		// request instead of leaving a catalog entry stuck In-Progress.
+		jobs, err := conversionJobs(cfg, item)
+		if err != nil {
+			utils.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		coll := database.Collection(client, "catalog")
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
@@ -386,9 +482,16 @@ func handleCreateVideo(client *mongo.Client) http.HandlerFunc {
 			return
 		}
 
+		// The processor runs from startup, so queued jobs are picked up on the
+		// next tick.
+		for _, job := range jobs {
+			q.Add(job)
+		}
+
 		utils.Success(w, http.StatusCreated, map[string]any{
 			"status": "success",
 			"id":     result.InsertedID,
+			"queued": len(jobs),
 		})
 	}
 }
@@ -602,7 +705,6 @@ func handleUploadVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			Season:      season,
 			Episode:     episode,
 		})
-		q.Start()
 
 		utils.Success(w, http.StatusCreated, map[string]any{
 			"status": "success",
@@ -710,7 +812,6 @@ func handleAddEpisode(client *mongo.Client, cfg *config.Config, q *queue.Convers
 			Season:      metadata.Season,
 			Episode:     metadata.Episode,
 		})
-		q.Start()
 
 		utils.Success(w, http.StatusOK, map[string]any{
 			"status":  "success",

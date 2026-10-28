@@ -1,6 +1,6 @@
 ARG PLATFORM=linux/amd64
 
-FROM --platform=$PLATFORM golang:1.26-alpine3.23 AS builder
+FROM --platform=$PLATFORM golang:1.27-alpine3.23 AS builder
 
 RUN apk add --no-cache git
 

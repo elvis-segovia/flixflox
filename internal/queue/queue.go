@@ -147,7 +147,10 @@ func (q *ConversionQueue) processLoop() {
 		q.mu.Lock()
 		now := time.Now()
 		for i := range q.jobs {
-			if q.jobs[i].UUID == job.UUID {
+			// One catalog item can have several jobs queued at once (an episode
+			// per POST, or a whole season), so the UUID alone does not identify
+			// the one that just finished.
+			if q.jobs[i].UUID == job.UUID && q.jobs[i].Season == job.Season && q.jobs[i].Episode == job.Episode {
 				if err != nil {
 					q.jobs[i].Status = StatusFailed
 					q.jobs[i].Error = err.Error()

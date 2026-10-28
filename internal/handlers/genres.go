@@ -25,6 +25,7 @@ func RegisterGenresRoutes(r chi.Router, client *mongo.Client, cfg *config.Config
 		r.Put("/v1/api/genres/{id}", handleUpdateGenre(client))
 		r.Delete("/v1/api/genres/{id}", handleDeleteGenre(client))
 	})
+	r.Get("/v1/api/bot/genres", handleListGenres(client))
 }
 
 func handleListGenres(client *mongo.Client) http.HandlerFunc {

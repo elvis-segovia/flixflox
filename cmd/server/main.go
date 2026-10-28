@@ -37,6 +37,7 @@ func main() {
 	database.EnsureIndexes(db)
 
 	q := queue.New(db, cfg)
+	q.Start()
 
 	r := chi.NewRouter()
 
