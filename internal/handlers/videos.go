@@ -164,12 +164,15 @@ func RegisterVideoRoutes(r chi.Router, client *mongo.Client, cfg *config.Config,
 	r.Get("/v1/api/videos/image/*", handleBgImage(cfg))
 	r.Get("/v1/api/videos/stream/*", handleStream(cfg))
 	r.Post("/v1/api/bot/videos", handleCreateVideo(client, cfg, q))
+	r.Post("/v1/api/bot/videos/{id}/new-episode", handleCreateEpisode(client, cfg, q))
+	r.Get("/v1/api/bot/titles", handleListVideosByTitle(client))
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(cfg.JWTSecret, client))
 		r.Post("/v1/api/videos", handleCreateVideo(client, cfg, q))
 		r.Post("/v1/api/videos/upload", handleUploadVideo(client, cfg, q))
+		r.Post("/v1/api/videos/{id}/new-episode", handleCreateEpisode(client, cfg, q))
 		r.Put("/v1/api/videos/{id}/new-episode", handleAddEpisode(client, cfg, q))
 		r.Put("/v1/api/videos/{uuid}/season/{season}/episode/{episode}", handleUpdateVideoBySeasonAndEpisode(client))
 		r.Get("/v1/api/videos/queue/info", handleQueueInfo(q))
@@ -194,6 +197,46 @@ func handleListVideos(client *mongo.Client) http.HandlerFunc {
 		var items []models.CatalogItem
 		if err := cursor.All(ctx, &items); err != nil {
 			utils.Error(w, http.StatusInternalServerError, "Failed to decode videos")
+			return
+		}
+
+		utils.Success(w, http.StatusOK, items)
+	}
+}
+
+func handleListVideosByTitle(client *mongo.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		title := r.URL.Query().Get("title")
+
+		if title == "" {
+			utils.Error(w, http.StatusNotFound, "Title not found")
+		}
+
+		coll := database.Collection(client, "catalog")
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+
+		cursor, err := coll.Find(ctx, bson.D{
+			{Key: "title", Value: bson.D{
+				{Key: "$regex", Value: title},
+				{Key: "$options", Value: "i"},
+			}},
+		})
+
+		if err != nil {
+			utils.Error(w, http.StatusInternalServerError, "Failed to fetch videos")
+			return
+		}
+		defer cursor.Close(ctx)
+
+		var items []models.CatalogItem
+		if err := cursor.All(ctx, &items); err != nil {
+			utils.Error(w, http.StatusInternalServerError, "Failed to decode videos")
+			return
+		}
+
+		if len(items) == 0 {
+			utils.Error(w, http.StatusNotFound, "Title not found")
 			return
 		}
 
@@ -492,6 +535,146 @@ func handleCreateVideo(client *mongo.Client, cfg *config.Config, q *queue.Conver
 			"status": "success",
 			"id":     result.InsertedID,
 			"queued": len(jobs),
+		})
+	}
+}
+
+// episodeRequest is the JSON body of handleCreateEpisode: an episode as the
+// catalog stores it, plus the season it belongs to. file_path is an
+// upload-root-relative source file, like the one handleCreateVideo takes.
+type episodeRequest struct {
+	models.Episode
+	Season int `json:"season"`
+}
+
+// handleCreateEpisode is handleCreateVideo for a single episode of an existing
+// show: the file is already in the upload folder, the body names it, and the
+// episode is pushed onto the show before its conversion job is queued.
+func handleCreateEpisode(client *mongo.Client, cfg *config.Config, q *queue.ConversionQueue) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		contentUUID := chi.URLParam(r, "id")
+
+		var req episodeRequest
+		if err := utils.DecodeBody(r, &req); err != nil {
+			utils.Error(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+
+		if req.Season == 0 {
+			req.Season = 1
+		}
+		if req.EpisodeNumber == 0 {
+			req.EpisodeNumber = 1
+		}
+		if req.Season < 0 || req.EpisodeNumber < 0 {
+			utils.Error(w, http.StatusBadRequest, "Season and episode number must be positive")
+			return
+		}
+
+		coll := database.Collection(client, "catalog")
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+
+		var item models.CatalogItem
+		if err := coll.FindOne(ctx, bson.M{"uuid": contentUUID}).Decode(&item); err != nil {
+			utils.Error(w, http.StatusNotFound, "Content not found")
+			return
+		}
+
+		if item.Type != "tvshow" {
+			utils.Error(w, http.StatusBadRequest, "Content is not a TV show")
+			return
+		}
+
+		seasonExists := false
+		for _, s := range item.Seasons {
+			if s.SeasonNumber != req.Season {
+				continue
+			}
+			seasonExists = true
+
+			for _, e := range s.Episodes {
+				if e.EpisodeNumber == req.EpisodeNumber {
+					utils.Error(w, http.StatusConflict, fmt.Sprintf("Season %d episode %d already exists", req.Season, req.EpisodeNumber))
+					return
+				}
+			}
+		}
+
+		// Resolve the source file before updating, so a bad path fails the
+		// request instead of leaving an episode stuck In-Progress.
+		var jobs []queue.Job
+		if req.FilePath != "" {
+			inputPath, err := resolveSourceFile(cfg.UploadFolder, req.FilePath)
+			if err != nil {
+				utils.Error(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			layout := storage.EpisodeLayout(item.Title, req.Season, req.EpisodeNumber)
+			jobs = append(jobs, queue.Job{
+				UUID:        item.UUID,
+				InputPath:   inputPath,
+				OutputDir:   layout.Dir,
+				OutputName:  layout.OutputName,
+				ContentType: item.Type,
+				Season:      req.Season,
+				Episode:     req.EpisodeNumber,
+			})
+		}
+
+		newEpisode := req.Episode
+		newEpisode.Status = "In-Progress"
+
+		var result *mongo.UpdateResult
+		var err error
+
+		if seasonExists {
+			result, err = coll.UpdateOne(ctx,
+				bson.M{"uuid": contentUUID},
+				bson.M{
+					"$push": bson.M{"seasons.$[s].episodes": newEpisode},
+					"$set":  bson.M{"updated_at": time.Now()},
+				},
+				options.UpdateOne().SetArrayFilters([]any{
+					bson.M{"s.season_number": req.Season},
+				}),
+			)
+		} else {
+			result, err = coll.UpdateOne(ctx,
+				bson.M{"uuid": contentUUID},
+				bson.M{
+					"$push": bson.M{"seasons": models.Season{
+						SeasonNumber: req.Season,
+						Episodes:     []models.Episode{newEpisode},
+					}},
+					"$set": bson.M{"updated_at": time.Now()},
+				},
+			)
+		}
+
+		if err != nil {
+			utils.Error(w, http.StatusInternalServerError, "Failed to add episode")
+			return
+		}
+
+		if result.MatchedCount == 0 {
+			utils.Error(w, http.StatusNotFound, "Content not found")
+			return
+		}
+
+		// The processor runs from startup, so queued jobs are picked up on the
+		// next tick.
+		for _, job := range jobs {
+			q.Add(job)
+		}
+
+		utils.Success(w, http.StatusCreated, map[string]any{
+			"status":  "success",
+			"uuid":    contentUUID,
+			"season":  req.Season,
+			"episode": req.EpisodeNumber,
+			"queued":  len(jobs),
 		})
 	}
 }
